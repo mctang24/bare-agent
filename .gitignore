@@ -1,0 +1,11 @@
+.env*
+.idea/
+.vscode/
+.codex/
+.DS_Store
+/bare-agent
+*.test
+*.out
+AGENTS.md
+ROADMAP.md
+裸Agent学习与实现方案.md

@@ -1,0 +1,123 @@
+package deepseek
+
+import (
+	"bare-agent/internal/agent"
+	"context"
+	"encoding/json"
+	"fmt"
+)
+
+// GenerateResponse generates a response with DeepSeek.
+func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agent.ModelRequest) (agent.ModelResponse, error) {
+	messages := make([]message, 0, len(request.Messages)+1)
+	if request.Instructions != "" {
+		messages = append(messages, message{Role: "system", Content: &request.Instructions})
+	}
+
+	for index, input := range request.Messages {
+		// RawMessage 存在时以其为准，忽略只读的 Content 和 ToolCalls；手动构造 assistant 消息时不设置 RawMessage。
+		if len(input.RawMessage) > 0 {
+			if input.Role != "" && input.Role != "assistant" {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek raw message %d has conflicting role %q", index, input.Role)
+			}
+			if len(input.ToolResults) > 0 {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek assistant message %d contains tool results", index)
+			}
+			var raw message
+			if err := json.Unmarshal(input.RawMessage, &raw); err != nil {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek decode raw message %d: %w", index, err)
+			}
+			if raw.Role != "assistant" {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek raw message %d role is %q, want assistant", index, raw.Role)
+			}
+			messages = append(messages, raw)
+			continue
+		}
+
+		// user 传内容，assistant 传回复或调用，tool 传执行结果。
+		switch input.Role {
+		case "user":
+			if len(input.ToolCalls) > 0 || len(input.ToolResults) > 0 {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek user message %d contains tool data", index)
+			}
+			messages = append(messages, message{Role: "user", Content: &input.Content})
+		case "assistant":
+			if len(input.ToolResults) > 0 {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek assistant message %d contains tool results", index)
+			}
+			converted := message{Role: "assistant", Content: &input.Content}
+			for _, call := range input.ToolCalls {
+				converted.ToolCalls = append(converted.ToolCalls, toolCall{
+					ID:   call.ID,
+					Type: "function",
+					Function: functionCall{
+						Name:      call.Name,
+						Arguments: call.Arguments,
+					},
+				})
+			}
+			messages = append(messages, converted)
+		case "tool":
+			if len(input.ToolResults) == 0 {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek tool message %d has no results", index)
+			}
+			if input.Content != "" || len(input.ToolCalls) > 0 {
+				return agent.ModelResponse{}, fmt.Errorf("DeepSeek tool message %d contains non-result data", index)
+			}
+			for _, result := range input.ToolResults {
+				content := result.Content
+				messages = append(messages, message{Role: "tool", Content: &content, ToolCallID: result.ToolCallID})
+			}
+		default:
+			return agent.ModelResponse{}, fmt.Errorf("DeepSeek message %d has unsupported role %q", index, input.Role)
+		}
+	}
+
+	definitions := make([]toolDefinition, 0, len(request.Tools))
+	for _, tool := range request.Tools {
+		definitions = append(definitions, toolDefinition{
+			Type: "function",
+			Function: functionDefinition{
+				Name:        tool.Name,
+				Description: tool.Description,
+				Parameters:  tool.Parameters,
+			},
+		})
+	}
+
+	response, err := client.createChatCompletion(ctx, chatCompletionRequest{Messages: messages, Tools: definitions})
+	if err != nil {
+		return agent.ModelResponse{}, err
+	}
+	if response.FinishReason != "stop" && response.FinishReason != "tool_calls" {
+		return agent.ModelResponse{}, fmt.Errorf("DeepSeek chat completion stopped with finish reason %q", response.FinishReason)
+	}
+	if response.FinishReason == "tool_calls" && len(response.Message.ToolCalls) == 0 {
+		return agent.ModelResponse{}, fmt.Errorf("DeepSeek chat completion stopped for tool calls but returned none")
+	}
+
+	rawMessage, err := json.Marshal(response.Message)
+	if err != nil {
+		return agent.ModelResponse{}, fmt.Errorf("DeepSeek encode raw assistant message: %w", err)
+	}
+	output := agent.Message{Role: "assistant", RawMessage: rawMessage}
+	if response.Message.Content != nil {
+		output.Content = *response.Message.Content
+	}
+	for _, call := range response.Message.ToolCalls {
+		output.ToolCalls = append(output.ToolCalls, agent.ToolCall{
+			ID:        call.ID,
+			Name:      call.Function.Name,
+			Arguments: call.Function.Arguments,
+		})
+	}
+
+	return agent.ModelResponse{
+		Message: output,
+		Usage: agent.TokenUsage{
+			PromptTokens:     response.Usage.PromptTokens,
+			CompletionTokens: response.Usage.CompletionTokens,
+			TotalTokens:      response.Usage.TotalTokens,
+		},
+	}, nil
+}
