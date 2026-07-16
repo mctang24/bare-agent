@@ -32,7 +32,7 @@ func TestCreateChatCompletion(t *testing.T) {
 				t.Errorf("body = %q, want to contain %q", body, expected)
 			}
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}],"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":40}}`))
 	}))
 	defer server.Close()
 
@@ -58,6 +58,9 @@ func TestCreateChatCompletion(t *testing.T) {
 	}
 	if response.Message.Content == nil || *response.Message.Content != "done" {
 		t.Errorf("response content = %v, want done", response.Message.Content)
+	}
+	if response.Usage != (tokenUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150, PromptCacheHitTokens: 80, PromptCacheMissTokens: 40}) {
+		t.Errorf("response usage = %#v", response.Usage)
 	}
 }
 

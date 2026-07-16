@@ -112,5 +112,14 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 		})
 	}
 
-	return agent.ModelResponse{Message: output}, nil
+	return agent.ModelResponse{
+		Message: output,
+		Usage: agent.TokenUsage{
+			PromptTokens:          response.Usage.PromptTokens,
+			CompletionTokens:      response.Usage.CompletionTokens,
+			TotalTokens:           response.Usage.TotalTokens,
+			PromptCacheHitTokens:  response.Usage.PromptCacheHitTokens,
+			PromptCacheMissTokens: response.Usage.PromptCacheMissTokens,
+		},
+	}, nil
 }
