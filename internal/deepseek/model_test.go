@@ -68,6 +68,28 @@ func TestGenerateResponse(t *testing.T) {
 	}
 }
 
+func TestGenerateResponseOmitsEmptyInstructions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		if strings.Contains(string(body), `"role":"system"`) {
+			t.Errorf("request body = %s, want no system message", body)
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`))
+	}))
+	defer server.Close()
+
+	client := DeepSeekClient{httpClient: server.Client(), baseURL: server.URL, apiKey: "test-key", model: "test-model"}
+	_, err := client.GenerateResponse(context.Background(), agent.ModelRequest{
+		Messages: []agent.Message{{Role: "user", Content: "find target"}},
+	})
+	if err != nil {
+		t.Fatalf("GenerateResponse() error = %v", err)
+	}
+}
+
 func TestGenerateResponseErrors(t *testing.T) {
 	tests := []struct {
 		name       string

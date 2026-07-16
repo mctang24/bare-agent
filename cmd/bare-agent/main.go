@@ -20,7 +20,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	runner, err := agent.NewAgent(config.root, client, "回答前先使用工具检查工作目录。回答应简洁，并直接给出结论。")
+	runner, err := agent.NewAgent(config.root, client, "")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
