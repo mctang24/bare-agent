@@ -2,16 +2,33 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"bare-agent/internal/tools"
+	"bare-agent/internal/trace"
 )
 
 type modelStub struct {
 	responses []ModelResponse
 	requests  []ModelRequest
+}
+
+func TestAgentEnableTrace(t *testing.T) {
+	agent := Agent{}
+	if err := agent.EnableTrace(trace.Writer{Path: filepath.Join(t.TempDir(), "trace.jsonl")}); err != nil {
+		t.Fatalf("EnableTrace() error = %v", err)
+	}
+	if agent.traceWriter == nil || !strings.HasPrefix(agent.sessionID, "session_") {
+		t.Fatalf("trace writer = %#v, session ID = %q", agent.traceWriter, agent.sessionID)
+	}
+	if err := agent.EnableTrace(trace.Writer{}); err == nil {
+		t.Fatal("EnableTrace() error = nil, want empty path error")
+	}
 }
 
 func TestNewAgent(t *testing.T) {
@@ -71,7 +88,7 @@ func (stub *modelStub) GenerateResponse(_ context.Context, request ModelRequest)
 func TestAgentRun(t *testing.T) {
 	model := &modelStub{responses: []ModelResponse{
 		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "echo", Arguments: `{}`}}}},
-		{Message: Message{Role: "assistant", Content: "done"}, Usage: TokenUsage{TotalTokens: 900_000}},
+		{Message: Message{Role: "assistant", Content: "done"}},
 	}}
 	agent := Agent{
 		model:        model,
@@ -86,7 +103,7 @@ func TestAgentRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if result.Content != "done" || result.ContextUsagePercent != 90 {
+	if result.Content != "done" {
 		t.Fatalf("Run() = %#v", result)
 	}
 	if len(model.requests) != 2 || len(model.requests[1].Messages) != 3 {
@@ -96,6 +113,107 @@ func TestAgentRun(t *testing.T) {
 	if toolMessage.Role != "tool" || len(toolMessage.ToolResults) != 1 || toolMessage.ToolResults[0].Content != "result" {
 		t.Fatalf("tool message = %#v", toolMessage)
 	}
+}
+
+func TestAgentRunTrace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace.jsonl")
+	model := &modelStub{responses: []ModelResponse{
+		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "fail", Arguments: `{}`}}}},
+		{Message: Message{Role: "assistant", Content: "done"}},
+	}}
+	agent := Agent{
+		model:        model,
+		maxTurns:     2,
+		instructions: "inspect carefully",
+		tools: []tools.Tool{{Name: "fail", Description: "always fails", Parameters: map[string]any{"type": "object"}, Execute: func(context.Context, string, string) (string, error) {
+			return "", errors.New("tool failed")
+		}}},
+	}
+	if err := agent.EnableTrace(trace.Writer{Path: path}); err != nil {
+		t.Fatalf("EnableTrace() error = %v", err)
+	}
+
+	if _, err := agent.Run(context.Background(), "task"); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	events := readTraceEvents(t, path)
+	wantTypes := []string{"run_start", "model_request", "model_response", "tool_call", "tool_result", "model_request", "model_response", "run_end"}
+	if len(events) != len(wantTypes) {
+		t.Fatalf("trace event count = %d, want %d", len(events), len(wantTypes))
+	}
+	runID := events[0].RunID
+	for index, event := range events {
+		if event.Type != wantTypes[index] || event.SessionID != agent.sessionID || event.RunID != runID || event.Timestamp.IsZero() {
+			t.Fatalf("trace event %d = %#v", index, event)
+		}
+	}
+	if !strings.HasPrefix(runID, "run_") || events[1].Turn != 1 || events[5].Turn != 2 {
+		t.Fatalf("run ID = %q, turns = %d, %d", runID, events[1].Turn, events[5].Turn)
+	}
+	if events[1].Data != nil || events[5].Data != nil {
+		t.Fatalf("model request data = %#v, %#v", events[1].Data, events[5].Data)
+	}
+	runStart := events[0].Data.(map[string]any)
+	traceTools := runStart["tools"].([]any)
+	traceTool := traceTools[0].(map[string]any)
+	if len(runStart) != 3 || runStart["task"] != "task" || runStart["instructions"] != "inspect carefully" || len(traceTools) != 1 || traceTool["name"] != "fail" || traceTool["description"] != "always fails" {
+		t.Fatalf("run start data = %#v", runStart)
+	}
+	toolResult := events[4].Data.(map[string]any)
+	if toolResult["isError"] != true || !strings.Contains(toolResult["content"].(string), "tool failed") {
+		t.Fatalf("tool result data = %#v", toolResult)
+	}
+	runEnd := events[7].Data.(map[string]any)
+	if runEnd["status"] != "success" {
+		t.Fatalf("run end data = %#v", runEnd)
+	}
+}
+
+func TestAgentRunTraceError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace.jsonl")
+	agent := Agent{model: errorModel{err: errors.New("model failed")}, maxTurns: 1}
+	if err := agent.EnableTrace(trace.Writer{Path: path}); err != nil {
+		t.Fatalf("EnableTrace() error = %v", err)
+	}
+
+	if _, err := agent.Run(context.Background(), "task"); err == nil {
+		t.Fatal("Run() error = nil")
+	}
+
+	events := readTraceEvents(t, path)
+	wantTypes := []string{"run_start", "model_request", "model_response", "run_end"}
+	if len(events) != len(wantTypes) {
+		t.Fatalf("trace event count = %d, want %d", len(events), len(wantTypes))
+	}
+	for index, event := range events {
+		if event.Type != wantTypes[index] {
+			t.Fatalf("trace event %d type = %q, want %q", index, event.Type, wantTypes[index])
+		}
+	}
+	response := events[2].Data.(map[string]any)
+	runEnd := events[3].Data.(map[string]any)
+	if response["error"] != "model failed" || runEnd["status"] != "error" || !strings.Contains(runEnd["error"].(string), "model failed") {
+		t.Fatalf("model response = %#v, run end = %#v", response, runEnd)
+	}
+}
+
+func readTraceEvents(t *testing.T, path string) []trace.Event {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	events := make([]trace.Event, 0, len(lines))
+	for _, line := range lines {
+		var event trace.Event
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("decode trace: %v", err)
+		}
+		events = append(events, event)
+	}
+	return events
 }
 
 func TestAgentRunContinuesConversation(t *testing.T) {
@@ -148,7 +266,9 @@ func TestAgentReset(t *testing.T) {
 	if _, err := agent.Run(context.Background(), "first question"); err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
-	agent.Reset()
+	if err := agent.Reset(); err != nil {
+		t.Fatalf("Reset() error = %v", err)
+	}
 	if _, err := agent.Run(context.Background(), "second question"); err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
@@ -156,6 +276,45 @@ func TestAgentReset(t *testing.T) {
 	messages := model.requests[1].Messages
 	if len(messages) != 1 || messages[0].Content != "second question" {
 		t.Fatalf("second request messages = %#v", messages)
+	}
+}
+
+func TestAgentResetTrace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace.jsonl")
+	agent := Agent{messages: []Message{{Role: "user", Content: "old"}}}
+	if err := agent.EnableTrace(trace.Writer{Path: path}); err != nil {
+		t.Fatalf("EnableTrace() error = %v", err)
+	}
+	oldSessionID := agent.sessionID
+	if err := agent.Reset(); err != nil {
+		t.Fatalf("Reset() error = %v", err)
+	}
+	if len(agent.messages) != 0 || agent.sessionID == oldSessionID || !strings.HasPrefix(agent.sessionID, "session_") {
+		t.Fatalf("messages = %#v, session ID = %q", agent.messages, agent.sessionID)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	var event trace.Event
+	if err := json.Unmarshal(data, &event); err != nil {
+		t.Fatalf("decode trace: %v", err)
+	}
+	if event.Type != "session_reset" || event.SessionID != oldSessionID {
+		t.Fatalf("trace event = %#v", event)
+	}
+
+	failed := Agent{messages: []Message{{Role: "user", Content: "keep"}}}
+	badPath := filepath.Join(t.TempDir(), "missing", "trace.jsonl")
+	if err := failed.EnableTrace(trace.Writer{Path: badPath}); err != nil {
+		t.Fatalf("EnableTrace() error = %v", err)
+	}
+	failedSessionID := failed.sessionID
+	if err := failed.Reset(); err == nil {
+		t.Fatal("Reset() error = nil, want trace write error")
+	}
+	if len(failed.messages) != 1 || failed.sessionID != failedSessionID {
+		t.Fatalf("failed reset messages = %#v, session ID = %q", failed.messages, failed.sessionID)
 	}
 }
 

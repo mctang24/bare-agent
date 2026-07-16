@@ -72,21 +72,3 @@ func TestMessageKeepsRawMessage(t *testing.T) {
 		t.Fatalf("raw message = %s, want %s", message.RawMessage, raw)
 	}
 }
-
-func TestContextUsagePercent(t *testing.T) {
-	tests := []struct {
-		tokens int
-		want   int
-	}{
-		{tokens: 0, want: 0},
-		{tokens: 800_000, want: 80},
-		{tokens: 900_000, want: 90},
-		{tokens: 1_100_000, want: 110},
-	}
-
-	for _, tt := range tests {
-		if got := contextUsagePercent(tt.tokens); got != tt.want {
-			t.Errorf("contextUsagePercent(%d) = %d, want %d", tt.tokens, got, tt.want)
-		}
-	}
-}

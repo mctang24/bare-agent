@@ -147,15 +147,13 @@ func TestParseChatCompletion(t *testing.T) {
 		wantFinish string
 		wantText   string
 		wantTool   string
-		wantUsage  tokenUsage
 		wantErr    bool
 	}{
 		{
 			name:       "text response",
-			data:       `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}],"usage":{"prompt_tokens":70,"completion_tokens":10,"total_tokens":80}}`,
+			data:       `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`,
 			wantFinish: "stop",
 			wantText:   "done",
-			wantUsage:  tokenUsage{PromptTokens: 70, CompletionTokens: 10, TotalTokens: 80},
 		},
 		{
 			name:       "tool call response",
@@ -205,9 +203,6 @@ func TestParseChatCompletion(t *testing.T) {
 			}
 			if tt.wantTool != "" && (len(response.Message.ToolCalls) != 1 || response.Message.ToolCalls[0].Function.Name != tt.wantTool) {
 				t.Errorf("ToolCalls = %#v, want tool %q", response.Message.ToolCalls, tt.wantTool)
-			}
-			if response.Usage != tt.wantUsage {
-				t.Errorf("Usage = %#v, want %#v", response.Usage, tt.wantUsage)
 			}
 		})
 	}

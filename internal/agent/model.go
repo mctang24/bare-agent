@@ -5,8 +5,6 @@ import (
 	"context"
 )
 
-const contextWindowTokens = 1_000_000
-
 // Model is the provider-independent interface used by Agent.
 type Model interface {
 	GenerateResponse(context.Context, ModelRequest) (ModelResponse, error)
@@ -20,20 +18,6 @@ type ModelRequest struct {
 
 type ModelResponse struct {
 	Message Message
-	Usage   TokenUsage
-}
-
-type TokenUsage struct {
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
-}
-
-func contextUsagePercent(totalTokens int) int {
-	if totalTokens <= 0 {
-		return 0
-	}
-	return totalTokens * 100 / contextWindowTokens
 }
 
 type Message struct {

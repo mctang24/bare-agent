@@ -24,7 +24,9 @@ func runInteractive(ctx context.Context, runner *agent.Agent, input io.Reader, o
 		case "/exit":
 			return nil
 		case "/new":
-			runner.Reset()
+			if err := runner.Reset(); err != nil {
+				return err
+			}
 			fmt.Fprintln(output, "new conversation")
 			continue
 		}
@@ -33,9 +35,6 @@ func runInteractive(ctx context.Context, runner *agent.Agent, input io.Reader, o
 		if err != nil {
 			fmt.Fprintln(errorOutput, err)
 			continue
-		}
-		if result.ContextUsagePercent >= 90 {
-			fmt.Fprintf(errorOutput, "warning: context usage is %d%%\n", result.ContextUsagePercent)
 		}
 		fmt.Fprintln(output, result.Content)
 	}

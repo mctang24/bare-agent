@@ -119,19 +119,11 @@ type chatCompletion struct {
 		FinishReason string           `json:"finish_reason"`
 		Message      assistantMessage `json:"message"`
 	} `json:"choices"`
-	Usage tokenUsage `json:"usage"`
-}
-
-type tokenUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
 }
 
 type modelResponse struct {
 	Message      assistantMessage
 	FinishReason string
-	Usage        tokenUsage
 }
 
 func parseChatCompletion(data []byte) (modelResponse, error) {
@@ -150,6 +142,5 @@ func parseChatCompletion(data []byte) (modelResponse, error) {
 	return modelResponse{
 		Message:      choice.Message,
 		FinishReason: choice.FinishReason,
-		Usage:        completion.Usage,
 	}, nil
 }

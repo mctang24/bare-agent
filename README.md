@@ -17,7 +17,8 @@
 - 内置 `list_files`、`read_file` 和 `search_text` 三个只读工具。
 - 支持多轮 tool calling，直到 LLM 给出最终回答。
 - 支持进程内连续对话，使用 `/new` 清空 context。
-- 提供 context usage 提醒、有限 API 重试和结构化错误回传。
+- 提供有限 API 重试和结构化错误回传。
+- 可选输出 JSONL trace，记录 session、run、模型调用和工具执行事件。
 
 ## 使用
 
@@ -40,6 +41,12 @@ go run ./cmd/bare-agent -root .
 
 ```bash
 go run ./cmd/bare-agent -root . "分析这个项目的入口"
+```
+
+需要记录运行轨迹时，指定 trace 文件：
+
+```bash
+go run ./cmd/bare-agent -root . -trace trace.jsonl "分析这个项目的入口"
 ```
 
 当前版本只保留 Agent Runtime 的核心能力：不修改文件，不执行任意命令，也不保存跨进程会话。

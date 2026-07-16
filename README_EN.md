@@ -17,7 +17,8 @@ DeepSeek is the default provider. To use another LLM, implement the project's `M
 - Three read-only tools for listing files, reading files, and searching code.
 - Multi-step tool calling until the LLM produces a final answer.
 - In-memory conversation history, with `/new` to start a fresh context.
-- Context usage warnings, bounded API retries, and structured error results.
+- Bounded API retries and structured error results.
+- Optional JSONL tracing for sessions, runs, model calls, and tool executions.
 
 ## Usage
 
@@ -40,6 +41,12 @@ You can also run a one-off task:
 
 ```bash
 go run ./cmd/bare-agent -root . "Explain the entry point of this project"
+```
+
+To record an execution trace, provide a trace file:
+
+```bash
+go run ./cmd/bare-agent -root . -trace trace.jsonl "Explain the entry point of this project"
 ```
 
 This version is intentionally read-only. It does not edit files, run arbitrary commands, or persist conversations across processes.

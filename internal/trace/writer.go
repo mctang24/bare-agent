@@ -8,12 +8,15 @@ import (
 	"time"
 )
 
+// 一个 session 包含多次用户输入，每次输入对应一个 run，每个 run 包含多条执行 event。
 type Event struct {
-	Timestamp time.Time `json:"timestamp"`
-	RunID     string    `json:"runId"`
-	Type      string    `json:"type"`
-	Turn      int       `json:"turn,omitempty"`
-	Data      any       `json:"data,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+	SessionID  string    `json:"sessionId"`
+	RunID      string    `json:"runId,omitempty"`
+	Type       string    `json:"type"`
+	Turn       int       `json:"turn,omitempty"`
+	DurationMS int64     `json:"durationMs,omitempty"`
+	Data       any       `json:"data,omitempty"`
 }
 
 type Writer struct {
@@ -25,11 +28,14 @@ func (w Writer) Append(event Event) error {
 	if w.Path == "" {
 		return errors.New("append trace event: path is empty")
 	}
-	if event.RunID == "" {
-		return errors.New("append trace event: run ID is empty")
+	if event.SessionID == "" {
+		return errors.New("append trace event: session ID is empty")
 	}
 	if event.Type == "" {
 		return errors.New("append trace event: type is empty")
+	}
+	if event.Type != "session_reset" && event.RunID == "" {
+		return errors.New("append trace event: run ID is empty")
 	}
 
 	encoded, err := json.Marshal(event)

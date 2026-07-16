@@ -3,6 +3,7 @@ package main
 import (
 	"bare-agent/internal/agent"
 	"bare-agent/internal/deepseek"
+	"bare-agent/internal/trace"
 	"context"
 	"fmt"
 	"os"
@@ -19,10 +20,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	runner, err := agent.NewAgent(config.root, client, "Inspect the working directory with tools before answering. Answer concisely and state the conclusion directly.")
+	runner, err := agent.NewAgent(config.root, client, "回答前先使用工具检查工作目录。回答应简洁，并直接给出结论。")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+	if config.tracePath != "" {
+		if err := runner.EnableTrace(trace.Writer{Path: config.tracePath}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 	if config.task == "" {
 		if err := runInteractive(context.Background(), runner, os.Stdin, os.Stdout, os.Stderr); err != nil {
@@ -35,9 +42,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
-	if result.ContextUsagePercent >= 90 {
-		fmt.Fprintf(os.Stderr, "warning: context usage is %d%%\n", result.ContextUsagePercent)
 	}
 	fmt.Println(result.Content)
 }

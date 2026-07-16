@@ -33,7 +33,7 @@ func TestGenerateResponse(t *testing.T) {
 		if count := strings.Count(string(body), `"role":"system"`); count != 1 {
 			t.Errorf("system message count = %d, want 1", count)
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"read it","tool_calls":[{"id":"call_2","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"main.go\"}"}}]}}],"usage":{"prompt_tokens":70,"completion_tokens":10,"total_tokens":80}}`))
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"read it","tool_calls":[{"id":"call_2","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"main.go\"}"}}]}}]}`))
 	}))
 	defer server.Close()
 
@@ -55,9 +55,6 @@ func TestGenerateResponse(t *testing.T) {
 	}
 	if len(response.Message.ToolCalls) != 1 || response.Message.ToolCalls[0].Name != "read_file" {
 		t.Fatalf("tool calls = %#v, want read_file", response.Message.ToolCalls)
-	}
-	if response.Usage != (agent.TokenUsage{PromptTokens: 70, CompletionTokens: 10, TotalTokens: 80}) {
-		t.Fatalf("usage = %#v", response.Usage)
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(response.Message.RawMessage, &raw); err != nil {
