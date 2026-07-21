@@ -33,7 +33,9 @@ func TestGenerateResponse(t *testing.T) {
 		if count := strings.Count(string(body), `"role":"system"`); count != 1 {
 			t.Errorf("system message count = %d, want 1", count)
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"read it","tool_calls":[{"id":"call_2","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"main.go\"}"}}]}}],"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":40}}`))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"finish_reason\":null,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"read it\",\"tool_calls\":[{\"index\":0,\"id\":\"call_2\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n\n" +
+			"data: {\"choices\":[{\"finish_reason\":\"tool_calls\",\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"main.go\\\"}\"}}]}}]}\n\n" +
+			"data: [DONE]\n\n"))
 	}))
 	defer server.Close()
 
@@ -56,9 +58,6 @@ func TestGenerateResponse(t *testing.T) {
 	if len(response.Message.ToolCalls) != 1 || response.Message.ToolCalls[0].Name != "read_file" {
 		t.Fatalf("tool calls = %#v, want read_file", response.Message.ToolCalls)
 	}
-	if response.Usage != (agent.TokenUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150, PromptCacheHitTokens: 80, PromptCacheMissTokens: 40}) {
-		t.Fatalf("usage = %#v", response.Usage)
-	}
 	var raw map[string]any
 	if err := json.Unmarshal(response.Message.RawMessage, &raw); err != nil {
 		t.Fatalf("decode raw message: %v", err)
@@ -77,7 +76,7 @@ func TestGenerateResponseOmitsEmptyInstructions(t *testing.T) {
 		if strings.Contains(string(body), `"role":"system"`) {
 			t.Errorf("request body = %s, want no system message", body)
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"role\":\"assistant\",\"content\":\"done\"}}]}\n\ndata: [DONE]\n\n"))
 	}))
 	defer server.Close()
 
@@ -107,9 +106,9 @@ func TestGenerateResponseErrors(t *testing.T) {
 		{name: "tool message without results", request: agent.ModelRequest{Messages: []agent.Message{{Role: "tool"}}}, wantErr: "has no results"},
 		{name: "tool message with content", request: agent.ModelRequest{Messages: []agent.Message{{Role: "tool", Content: "duplicate", ToolResults: []agent.ToolResult{{ToolCallID: "call_1"}}}}}, wantErr: "contains non-result data"},
 		{name: "tool message with tool calls", request: agent.ModelRequest{Messages: []agent.Message{{Role: "tool", ToolCalls: []agent.ToolCall{{ID: "call_2"}}, ToolResults: []agent.ToolResult{{ToolCallID: "call_1"}}}}}, wantErr: "contains non-result data"},
-		{name: "unsafe finish reason", request: agent.ModelRequest{Messages: []agent.Message{{Role: "user", Content: "test"}}}, response: `{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"partial"}}]}`, wantErr: `finish reason "length"`, wantCalled: true},
-		{name: "unknown finish reason", request: agent.ModelRequest{Messages: []agent.Message{{Role: "user", Content: "test"}}}, response: `{"choices":[{"finish_reason":"future_reason","message":{"role":"assistant","content":"partial"}}]}`, wantErr: `finish reason "future_reason"`, wantCalled: true},
-		{name: "missing tool calls", request: agent.ModelRequest{Messages: []agent.Message{{Role: "user", Content: "test"}}}, response: `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null}}]}`, wantErr: "returned none", wantCalled: true},
+		{name: "unsafe finish reason", request: agent.ModelRequest{Messages: []agent.Message{{Role: "user", Content: "test"}}}, response: "data: {\"choices\":[{\"finish_reason\":\"length\",\"delta\":{\"role\":\"assistant\",\"content\":\"partial\"}}]}\n\ndata: [DONE]\n\n", wantErr: `finish reason "length"`, wantCalled: true},
+		{name: "unknown finish reason", request: agent.ModelRequest{Messages: []agent.Message{{Role: "user", Content: "test"}}}, response: "data: {\"choices\":[{\"finish_reason\":\"future_reason\",\"delta\":{\"role\":\"assistant\",\"content\":\"partial\"}}]}\n\ndata: [DONE]\n\n", wantErr: `finish reason "future_reason"`, wantCalled: true},
+		{name: "missing tool calls", request: agent.ModelRequest{Messages: []agent.Message{{Role: "user", Content: "test"}}}, response: "data: {\"choices\":[{\"finish_reason\":\"tool_calls\",\"delta\":{\"role\":\"assistant\"}}]}\n\ndata: [DONE]\n\n", wantErr: "returned none", wantCalled: true},
 	}
 
 	for _, tt := range tests {

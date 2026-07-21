@@ -118,7 +118,7 @@ func TestAgentRun(t *testing.T) {
 func TestAgentRunTrace(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "trace.jsonl")
 	model := &modelStub{responses: []ModelResponse{
-		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "fail", Arguments: `{}`}}}, Usage: TokenUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150, PromptCacheHitTokens: 80, PromptCacheMissTokens: 40}},
+		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "fail", Arguments: `{}`}}}},
 		{Message: Message{Role: "assistant", Content: "done"}},
 	}}
 	agent := Agent{
@@ -153,14 +153,6 @@ func TestAgentRunTrace(t *testing.T) {
 	}
 	if events[1].Data != nil || events[5].Data != nil {
 		t.Fatalf("model request data = %#v, %#v", events[1].Data, events[5].Data)
-	}
-	modelResponse := events[2].Data.(map[string]any)
-	usage := modelResponse["usage"].(map[string]any)
-	if usage["promptTokens"] != float64(120) || usage["completionTokens"] != float64(30) || usage["totalTokens"] != float64(150) || usage["promptCacheHitTokens"] != float64(80) || usage["promptCacheMissTokens"] != float64(40) {
-		t.Fatalf("model response usage = %#v", usage)
-	}
-	if modelResponseWithoutUsage := events[6].Data.(map[string]any); modelResponseWithoutUsage["usage"] != nil {
-		t.Fatalf("model response without usage = %#v", modelResponseWithoutUsage)
 	}
 	runStart := events[0].Data.(map[string]any)
 	traceTools := runStart["tools"].([]any)

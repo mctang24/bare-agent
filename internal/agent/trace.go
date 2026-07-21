@@ -124,9 +124,6 @@ func (agent *Agent) callModel(ctx context.Context, request ModelRequest, current
 	}
 
 	data := map[string]any{"content": response.Message.Content, "toolCalls": response.Message.ToolCalls}
-	if response.Usage != (TokenUsage{}) {
-		data["usage"] = response.Usage
-	}
 	if err := current.append(trace.Event{
 		Timestamp:  time.Now().UTC(),
 		Type:       "model_response",

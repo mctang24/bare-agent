@@ -27,12 +27,14 @@ func TestCreateChatCompletion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
 		}
-		for _, expected := range []string{`"model":"deepseek-v4-flash"`, `"role":"user"`, `"content":"find target"`, `"name":"search_text"`, `"stream":false`} {
+		for _, expected := range []string{`"model":"deepseek-v4-flash"`, `"role":"user"`, `"content":"find target"`, `"name":"search_text"`, `"stream":true`} {
 			if !strings.Contains(string(body), expected) {
 				t.Errorf("body = %q, want to contain %q", body, expected)
 			}
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}],"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":40}}`))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"finish_reason\":null,\"delta\":{\"role\":\"assistant\",\"content\":\"do\"}}]}\n\n" +
+			"data: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"content\":\"ne\"}}]}\n\n" +
+			"data: [DONE]\n\n"))
 	}))
 	defer server.Close()
 
@@ -58,9 +60,6 @@ func TestCreateChatCompletion(t *testing.T) {
 	}
 	if response.Message.Content == nil || *response.Message.Content != "done" {
 		t.Errorf("response content = %v, want done", response.Message.Content)
-	}
-	if response.Usage != (tokenUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150, PromptCacheHitTokens: 80, PromptCacheMissTokens: 40}) {
-		t.Errorf("response usage = %#v", response.Usage)
 	}
 }
 
@@ -98,30 +97,26 @@ func TestCreateChatCompletionErrors(t *testing.T) {
 			}
 		})
 	}
-	if calls != 3 {
-		t.Fatalf("server calls = %d, want 3", calls)
+	if calls != 1 {
+		t.Fatalf("server calls = %d, want 1", calls)
 	}
 }
 
-func TestCreateChatCompletionRetries(t *testing.T) {
+func TestCreateChatCompletionDoesNotRetryServerError(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
-		if calls == 1 {
-			http.Error(w, "busy", http.StatusInternalServerError)
-			return
-		}
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`))
+		http.Error(w, "busy", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
 	client := DeepSeekClient{httpClient: server.Client(), baseURL: server.URL, apiKey: "test-key", model: "deepseek-v4-flash"}
 	_, err := client.createChatCompletion(context.Background(), chatCompletionRequest{Messages: []message{{Role: "user", Content: new("test")}}})
-	if err != nil {
-		t.Fatalf("createChatCompletion() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "500 Internal Server Error") {
+		t.Fatalf("createChatCompletion() error = %v, want 500 Internal Server Error", err)
 	}
-	if calls != 2 {
-		t.Fatalf("server calls = %d, want 2", calls)
+	if calls != 1 {
+		t.Fatalf("server calls = %d, want 1", calls)
 	}
 }
 
@@ -143,7 +138,7 @@ func TestCreateChatCompletionDoesNotRetryBadRequest(t *testing.T) {
 	}
 }
 
-func TestParseChatCompletion(t *testing.T) {
+func TestParseChatCompletionStream(t *testing.T) {
 	tests := []struct {
 		name       string
 		data       string
@@ -154,49 +149,54 @@ func TestParseChatCompletion(t *testing.T) {
 	}{
 		{
 			name:       "text response",
-			data:       `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`,
+			data:       "data: {\"choices\":[{\"finish_reason\":null,\"delta\":{\"role\":\"assistant\",\"content\":\"do\"}}]}\n\ndata: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"role\":\"assistant\",\"content\":\"ne\"}}]}\n\ndata: [DONE]\n\n",
 			wantFinish: "stop",
 			wantText:   "done",
 		},
 		{
 			name:       "tool call response",
-			data:       `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"search first","tool_calls":[{"id":"call_1","type":"function","function":{"name":"search_text","arguments":"{\"query\":\"target\"}"}}]}}]}`,
+			data:       "data: {\"choices\":[{\"finish_reason\":null,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"search first\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"search_text\",\"arguments\":\"{\\\"query\\\":\"}}]}}]}\n\ndata: {\"choices\":[{\"finish_reason\":\"tool_calls\",\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"target\\\"}\"}}]}}]}\n\ndata: [DONE]\n\n",
 			wantFinish: "tool_calls",
 			wantTool:   "search_text",
 		},
 		{
 			name:    "invalid JSON",
-			data:    `{`,
+			data:    "data: {\n\n",
 			wantErr: true,
 		},
 		{
-			name:    "no choices",
-			data:    `{"choices":[]}`,
+			name:    "missing done",
+			data:    "data: {\"choices\":[]}\n\n",
 			wantErr: true,
 		},
 		{
-			name:    "no assistant message",
-			data:    `{"choices":[{"finish_reason":"stop","message":null}]}`,
+			name:    "missing finish reason",
+			data:    "data: {\"choices\":[]}\n\ndata: [DONE]\n\n",
 			wantErr: true,
 		},
 		{
 			name:    "invalid message role",
-			data:    `{"choices":[{"finish_reason":"stop","message":{"role":"user","content":"done"}}]}`,
+			data:    "data: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"role\":\"user\",\"content\":\"done\"}}]}\n\ndata: [DONE]\n\n",
+			wantErr: true,
+		},
+		{
+			name:    "missing message role",
+			data:    "data: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"content\":\"done\"}}]}\n\ndata: [DONE]\n\n",
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			response, err := parseChatCompletion([]byte(tt.data))
+			response, err := parseChatCompletionStream(strings.NewReader(tt.data))
 			if tt.wantErr {
 				if err == nil {
-					t.Fatal("parseChatCompletion() error = nil, want error")
+					t.Fatal("parseChatCompletionStream() error = nil, want error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseChatCompletion() error = %v", err)
+				t.Fatalf("parseChatCompletionStream() error = %v", err)
 			}
 			if response.FinishReason != tt.wantFinish {
 				t.Errorf("FinishReason = %q, want %q", response.FinishReason, tt.wantFinish)
@@ -211,24 +211,18 @@ func TestParseChatCompletion(t *testing.T) {
 	}
 }
 
-func TestIsRetryableStatus(t *testing.T) {
-	tests := map[int]bool{
-		http.StatusBadRequest:          false,
-		http.StatusUnauthorized:        false,
-		http.StatusPaymentRequired:     false,
-		http.StatusNotFound:            false,
-		http.StatusUnprocessableEntity: false,
-		http.StatusTooManyRequests:     true,
-		http.StatusInternalServerError: true,
-		http.StatusNotImplemented:      false,
-		http.StatusBadGateway:          false,
-		http.StatusServiceUnavailable:  true,
-		http.StatusGatewayTimeout:      false,
-	}
+func TestParseChatCompletionStreamAcceptsLargeEvent(t *testing.T) {
+	content := strings.Repeat("a", 1024*1024)
+	data := "data: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"role\":\"assistant\",\"content\":\"" + content + "\"}}]}\n\ndata: [DONE]\n\n"
 
-	for status, want := range tests {
-		if got := isRetryableStatus(status); got != want {
-			t.Errorf("isRetryableStatus(%d) = %t, want %t", status, got, want)
-		}
+	response, err := parseChatCompletionStream(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("parseChatCompletionStream() error = %v", err)
+	}
+	if response.Message.Content == nil {
+		t.Fatal("content = nil")
+	}
+	if *response.Message.Content != content {
+		t.Fatalf("content length = %d, want %d", len(*response.Message.Content), len(content))
 	}
 }

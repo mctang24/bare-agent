@@ -18,15 +18,6 @@ type ModelRequest struct {
 
 type ModelResponse struct {
 	Message Message
-	Usage   TokenUsage
-}
-
-type TokenUsage struct {
-	PromptTokens          int `json:"promptTokens,omitempty"`
-	CompletionTokens      int `json:"completionTokens,omitempty"`
-	TotalTokens           int `json:"totalTokens,omitempty"`
-	PromptCacheHitTokens  int `json:"promptCacheHitTokens,omitempty"`
-	PromptCacheMissTokens int `json:"promptCacheMissTokens,omitempty"`
 }
 
 type Message struct {
