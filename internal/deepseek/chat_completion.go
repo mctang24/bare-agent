@@ -36,7 +36,12 @@ type chatCompletionRequest struct {
 }
 
 func isRetryableStatus(status int) bool {
-	return status == http.StatusTooManyRequests || status == http.StatusInternalServerError || status == http.StatusServiceUnavailable
+	switch status {
+	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func (client *DeepSeekClient) createChatCompletion(_ context.Context, input chatCompletionRequest) (modelResponse, error) {

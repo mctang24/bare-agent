@@ -4,7 +4,6 @@ import (
 	"bare-agent/internal/tools"
 	"bare-agent/internal/trace"
 	"context"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -83,12 +82,11 @@ func (agent *Agent) Run(ctx context.Context, task string) (result RunResult, run
 	definitions := modelTools(agent.tools)
 	currentTrace, err := agent.startRunTrace(task, definitions)
 	if err != nil {
-		return RunResult{}, err
+		reportTraceError("run_start", err)
 	}
 	defer func() {
 		if err := currentTrace.finish(runErr); err != nil {
-			result = RunResult{}
-			runErr = errors.Join(runErr, fmt.Errorf("agent run: %w", err))
+			reportTraceError("run_end", err)
 		}
 	}()
 
@@ -133,17 +131,18 @@ func (agent *Agent) Reset() error {
 	if agent.traceWriter != nil {
 		newSessionID, err := newTraceID("session")
 		if err != nil {
-			return fmt.Errorf("reset agent: %w", err)
+			reportTraceError("session_reset", err)
+		} else {
+			if err := agent.traceWriter.Append(trace.Event{
+				Timestamp: time.Now().UTC(),
+				SessionID: agent.sessionID,
+				Type:      "session_reset",
+				Data:      map[string]any{"newSessionId": newSessionID},
+			}); err != nil {
+				reportTraceError("session_reset", err)
+			}
+			agent.sessionID = newSessionID
 		}
-		if err := agent.traceWriter.Append(trace.Event{
-			Timestamp: time.Now().UTC(),
-			SessionID: agent.sessionID,
-			Type:      "session_reset",
-			Data:      map[string]any{"newSessionId": newSessionID},
-		}); err != nil {
-			return fmt.Errorf("reset agent: %w", err)
-		}
-		agent.sessionID = newSessionID
 	}
 	agent.messages = nil
 	return nil

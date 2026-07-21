@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"bare-agent/internal/trace"
@@ -22,6 +22,12 @@ type traceToolDefinition struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+func reportTraceError(event string, err error) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trace %s error: %v\n", event, err)
+	}
 }
 
 func newTraceID(prefix string) (string, error) {
@@ -100,7 +106,7 @@ func (agent *Agent) callModel(ctx context.Context, request ModelRequest, current
 		Type:      "model_request",
 		Turn:      turn,
 	}); err != nil {
-		return ModelResponse{}, fmt.Errorf("agent run: %w", err)
+		reportTraceError("model_request", err)
 	}
 
 	response, err := agent.model.GenerateResponse(ctx, request)
@@ -113,9 +119,7 @@ func (agent *Agent) callModel(ctx context.Context, request ModelRequest, current
 			Data:       map[string]any{"error": err.Error()},
 		})
 		modelErr := fmt.Errorf("agent run: generate response: %w", err)
-		if traceErr != nil {
-			return ModelResponse{}, errors.Join(modelErr, fmt.Errorf("agent run: %w", traceErr))
-		}
+		reportTraceError("model_response", traceErr)
 		return ModelResponse{}, modelErr
 	}
 
@@ -130,7 +134,7 @@ func (agent *Agent) callModel(ctx context.Context, request ModelRequest, current
 		DurationMS: time.Since(startedAt).Milliseconds(),
 		Data:       data,
 	}); err != nil {
-		return ModelResponse{}, fmt.Errorf("agent run: %w", err)
+		reportTraceError("model_response", err)
 	}
 	return response, nil
 }
@@ -143,7 +147,7 @@ func (agent *Agent) callTool(ctx context.Context, call ToolCall, current *runTra
 		Turn:      turn,
 		Data:      map[string]any{"id": call.ID, "name": call.Name, "arguments": call.Arguments},
 	}); err != nil {
-		return ToolResult{}, fmt.Errorf("agent run: %w", err)
+		reportTraceError("tool_call", err)
 	}
 
 	result, err := agent.executeToolCall(ctx, call)
@@ -155,11 +159,8 @@ func (agent *Agent) callTool(ctx context.Context, call ToolCall, current *runTra
 			DurationMS: time.Since(startedAt).Milliseconds(),
 			Data:       map[string]any{"id": call.ID, "error": err.Error()},
 		})
-		toolErr := fmt.Errorf("agent run: %w", err)
-		if traceErr != nil {
-			return ToolResult{}, errors.Join(toolErr, fmt.Errorf("agent run: %w", traceErr))
-		}
-		return ToolResult{}, toolErr
+		reportTraceError("tool_result", traceErr)
+		return ToolResult{}, fmt.Errorf("agent run: %w", err)
 	}
 
 	if err := current.append(trace.Event{
@@ -169,7 +170,7 @@ func (agent *Agent) callTool(ctx context.Context, call ToolCall, current *runTra
 		DurationMS: time.Since(startedAt).Milliseconds(),
 		Data:       map[string]any{"id": call.ID, "content": result.Content, "isError": result.IsError},
 	}); err != nil {
-		return ToolResult{}, fmt.Errorf("agent run: %w", err)
+		reportTraceError("tool_result", err)
 	}
 	return result, nil
 }

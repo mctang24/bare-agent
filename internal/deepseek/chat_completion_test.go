@@ -215,10 +215,15 @@ func TestIsRetryableStatus(t *testing.T) {
 	tests := map[int]bool{
 		http.StatusBadRequest:          false,
 		http.StatusUnauthorized:        false,
+		http.StatusPaymentRequired:     false,
+		http.StatusNotFound:            false,
+		http.StatusUnprocessableEntity: false,
 		http.StatusTooManyRequests:     true,
 		http.StatusInternalServerError: true,
+		http.StatusNotImplemented:      false,
 		http.StatusBadGateway:          false,
 		http.StatusServiceUnavailable:  true,
+		http.StatusGatewayTimeout:      false,
 	}
 
 	for status, want := range tests {

@@ -206,6 +206,23 @@ func TestAgentRunTraceError(t *testing.T) {
 	}
 }
 
+func TestAgentRunIgnoresTraceStartError(t *testing.T) {
+	model := &modelStub{responses: []ModelResponse{{Message: Message{Role: "assistant", Content: "done"}}}}
+	agent := Agent{model: model, maxTurns: 1}
+	badPath := filepath.Join(t.TempDir(), "missing", "trace.jsonl")
+	if err := agent.EnableTrace(trace.Writer{Path: badPath}); err != nil {
+		t.Fatalf("EnableTrace() error = %v", err)
+	}
+
+	result, err := agent.Run(context.Background(), "task")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.Content != "done" || len(agent.messages) != 2 {
+		t.Fatalf("Run() = %#v, messages = %#v", result, agent.messages)
+	}
+}
+
 func readTraceEvents(t *testing.T, path string) []trace.Event {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -318,10 +335,10 @@ func TestAgentResetTrace(t *testing.T) {
 		t.Fatalf("EnableTrace() error = %v", err)
 	}
 	failedSessionID := failed.sessionID
-	if err := failed.Reset(); err == nil {
-		t.Fatal("Reset() error = nil, want trace write error")
+	if err := failed.Reset(); err != nil {
+		t.Fatalf("Reset() error = %v", err)
 	}
-	if len(failed.messages) != 1 || failed.sessionID != failedSessionID {
+	if len(failed.messages) != 0 || failed.sessionID == failedSessionID {
 		t.Fatalf("failed reset messages = %#v, session ID = %q", failed.messages, failed.sessionID)
 	}
 }
@@ -351,11 +368,15 @@ func TestAgentRunErrors(t *testing.T) {
 }
 
 func TestAgentRunModelError(t *testing.T) {
-	model := errorModel{err: errors.New("failed")}
+	modelError := errors.New("failed")
+	model := errorModel{err: modelError}
 	agent := Agent{model: model, maxTurns: 1}
 	_, err := agent.Run(context.Background(), "task")
 	if err == nil || !strings.Contains(err.Error(), "generate response: failed") {
 		t.Fatalf("Run() error = %v", err)
+	}
+	if !errors.Is(err, modelError) {
+		t.Fatalf("errors.Is(Run() error, model error) = false")
 	}
 }
 
