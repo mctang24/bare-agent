@@ -40,7 +40,7 @@ func TestGenerateResponse(t *testing.T) {
 	defer server.Close()
 
 	client := DeepSeekClient{httpClient: server.Client(), baseURL: server.URL, apiKey: "test-key", model: "test-model"}
-	response, err := client.GenerateResponse(context.Background(), agent.ModelRequest{
+	stream, err := client.GenerateResponse(context.Background(), agent.ModelRequest{
 		Instructions: "inspect before answering",
 		Messages: []agent.Message{
 			{Role: "user", Content: "find target"},
@@ -54,6 +54,10 @@ func TestGenerateResponse(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("GenerateResponse() error = %v", err)
+	}
+	response, err := readModelStream(stream)
+	if err != nil {
+		t.Fatalf("read model stream: %v", err)
 	}
 	if len(response.Message.ToolCalls) != 1 || response.Message.ToolCalls[0].Name != "read_file" {
 		t.Fatalf("tool calls = %#v, want read_file", response.Message.ToolCalls)
@@ -81,11 +85,14 @@ func TestGenerateResponseOmitsEmptyInstructions(t *testing.T) {
 	defer server.Close()
 
 	client := DeepSeekClient{httpClient: server.Client(), baseURL: server.URL, apiKey: "test-key", model: "test-model"}
-	_, err := client.GenerateResponse(context.Background(), agent.ModelRequest{
+	stream, err := client.GenerateResponse(context.Background(), agent.ModelRequest{
 		Messages: []agent.Message{{Role: "user", Content: "find target"}},
 	})
 	if err != nil {
 		t.Fatalf("GenerateResponse() error = %v", err)
+	}
+	if _, err := readModelStream(stream); err != nil {
+		t.Fatalf("read model stream: %v", err)
 	}
 }
 
@@ -121,7 +128,10 @@ func TestGenerateResponseErrors(t *testing.T) {
 			defer server.Close()
 			client := DeepSeekClient{httpClient: server.Client(), baseURL: server.URL, apiKey: "test-key", model: "test-model"}
 
-			_, err := client.GenerateResponse(context.Background(), tt.request)
+			stream, err := client.GenerateResponse(context.Background(), tt.request)
+			if err == nil {
+				_, err = readModelStream(stream)
+			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("GenerateResponse() error = %v, want to contain %q", err, tt.wantErr)
 			}
@@ -129,5 +139,18 @@ func TestGenerateResponseErrors(t *testing.T) {
 				t.Fatalf("server called = %v, want %v", called, tt.wantCalled)
 			}
 		})
+	}
+}
+
+func readModelStream(stream agent.ModelStream) (agent.ModelResponse, error) {
+	defer stream.Close()
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			return agent.ModelResponse{}, err
+		}
+		if event.Response != nil {
+			return *event.Response, nil
+		}
 	}
 }

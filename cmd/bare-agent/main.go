@@ -38,10 +38,9 @@ func main() {
 		}
 		return
 	}
-	result, err := runner.Run(context.Background(), config.task)
-	if err != nil {
+	if err := runTask(context.Background(), runner, config.task, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println(result.Content)
+	fmt.Println()
 }

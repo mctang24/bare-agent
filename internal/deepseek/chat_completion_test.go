@@ -44,7 +44,7 @@ func TestCreateChatCompletion(t *testing.T) {
 		apiKey:     "test-key",
 		model:      "deepseek-v4-flash",
 	}
-	response, err := client.createChatCompletion(context.Background(), chatCompletionRequest{
+	stream, err := client.createChatCompletion(context.Background(), chatCompletionRequest{
 		Messages: []message{{Role: "user", Content: new("find target")}},
 		Tools: []toolDefinition{{
 			Type: "function",
@@ -58,8 +58,30 @@ func TestCreateChatCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createChatCompletion() error = %v", err)
 	}
+	streamed, response, err := readChatCompletionStream(stream)
+	if err != nil {
+		t.Fatalf("read chat completion stream: %v", err)
+	}
 	if response.Message.Content == nil || *response.Message.Content != "done" {
 		t.Errorf("response content = %v, want done", response.Message.Content)
+	}
+	if streamed != "done" {
+		t.Errorf("streamed content = %q, want done", streamed)
+	}
+}
+
+func readChatCompletionStream(stream *chatCompletionStream) (string, modelResponse, error) {
+	defer stream.Close()
+	var text strings.Builder
+	for {
+		event, err := stream.Recv()
+		if err != nil {
+			return text.String(), modelResponse{}, err
+		}
+		if event.Response != nil {
+			return text.String(), *event.Response, nil
+		}
+		text.WriteString(event.TextDelta)
 	}
 }
 
@@ -188,7 +210,8 @@ func TestParseChatCompletionStream(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			response, err := parseChatCompletionStream(strings.NewReader(tt.data))
+			stream := newChatCompletionStream(io.NopCloser(strings.NewReader(tt.data)))
+			_, response, err := readChatCompletionStream(stream)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("parseChatCompletionStream() error = nil, want error")
@@ -215,7 +238,8 @@ func TestParseChatCompletionStreamAcceptsLargeEvent(t *testing.T) {
 	content := strings.Repeat("a", 1024*1024)
 	data := "data: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"role\":\"assistant\",\"content\":\"" + content + "\"}}]}\n\ndata: [DONE]\n\n"
 
-	response, err := parseChatCompletionStream(strings.NewReader(data))
+	stream := newChatCompletionStream(io.NopCloser(strings.NewReader(data)))
+	_, response, err := readChatCompletionStream(stream)
 	if err != nil {
 		t.Fatalf("parseChatCompletionStream() error = %v", err)
 	}
@@ -224,5 +248,20 @@ func TestParseChatCompletionStreamAcceptsLargeEvent(t *testing.T) {
 	}
 	if *response.Message.Content != content {
 		t.Fatalf("content length = %d, want %d", len(*response.Message.Content), len(content))
+	}
+}
+
+func TestParseChatCompletionStreamDoesNotEmitReasoning(t *testing.T) {
+	data := "data: {\"choices\":[{\"finish_reason\":null,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"hidden\"}}]}\n\ndata: {\"choices\":[{\"finish_reason\":\"stop\",\"delta\":{\"content\":\"shown\"}}]}\n\ndata: [DONE]\n\n"
+	stream := newChatCompletionStream(io.NopCloser(strings.NewReader(data)))
+	streamed, response, err := readChatCompletionStream(stream)
+	if err != nil {
+		t.Fatalf("parseChatCompletionStream() error = %v", err)
+	}
+	if streamed != "shown" {
+		t.Fatalf("streamed content = %q, want shown", streamed)
+	}
+	if response.Message.ReasoningContent == nil || *response.Message.ReasoningContent != "hidden" {
+		t.Fatalf("reasoning content = %v, want hidden", response.Message.ReasoningContent)
 	}
 }

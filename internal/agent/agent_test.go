@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,16 +79,44 @@ func TestNewAgentErrors(t *testing.T) {
 	}
 }
 
-func (stub *modelStub) GenerateResponse(_ context.Context, request ModelRequest) (ModelResponse, error) {
+func (stub *modelStub) GenerateResponse(_ context.Context, request ModelRequest) (ModelStream, error) {
 	stub.requests = append(stub.requests, request)
 	response := stub.responses[0]
 	stub.responses = stub.responses[1:]
-	return response, nil
+	return &stubModelStream{response: response}, nil
 }
+
+type stubModelStream struct {
+	response ModelResponse
+	sentText bool
+	finished bool
+	err      error
+}
+
+func (stream *stubModelStream) Recv() (ModelStreamEvent, error) {
+	if stream.finished {
+		return ModelStreamEvent{}, io.EOF
+	}
+	if stream.sentText {
+		if stream.err != nil {
+			return ModelStreamEvent{}, stream.err
+		}
+		stream.finished = true
+		return ModelStreamEvent{Response: &stream.response}, nil
+	}
+	stream.sentText = true
+	if stream.response.Message.Content == "" {
+		stream.finished = true
+		return ModelStreamEvent{Response: &stream.response}, nil
+	}
+	return ModelStreamEvent{TextDelta: stream.response.Message.Content}, nil
+}
+
+func (stream *stubModelStream) Close() error { return nil }
 
 func TestAgentRun(t *testing.T) {
 	model := &modelStub{responses: []ModelResponse{
-		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "echo", Arguments: `{}`}}}},
+		{Message: Message{Role: "assistant", Content: "checking", ToolCalls: []ToolCall{{ID: "call_1", Name: "echo", Arguments: `{}`}}}},
 		{Message: Message{Role: "assistant", Content: "done"}},
 	}}
 	agent := Agent{
@@ -99,12 +128,19 @@ func TestAgentRun(t *testing.T) {
 		}}},
 	}
 
-	result, err := agent.Run(context.Background(), "task")
+	var streamed strings.Builder
+	result, err := agent.Run(context.Background(), "task", func(delta string) error {
+		streamed.WriteString(delta)
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if result.Content != "done" {
 		t.Fatalf("Run() = %#v", result)
+	}
+	if streamed.String() != "checkingdone" {
+		t.Fatalf("streamed output = %q, want checkingdone", streamed.String())
 	}
 	if len(model.requests) != 2 || len(model.requests[1].Messages) != 3 {
 		t.Fatalf("model requests = %#v", model.requests)
@@ -133,7 +169,7 @@ func TestAgentRunTrace(t *testing.T) {
 		t.Fatalf("EnableTrace() error = %v", err)
 	}
 
-	if _, err := agent.Run(context.Background(), "task"); err != nil {
+	if _, err := agent.Run(context.Background(), "task", nil); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -177,7 +213,7 @@ func TestAgentRunTraceError(t *testing.T) {
 		t.Fatalf("EnableTrace() error = %v", err)
 	}
 
-	if _, err := agent.Run(context.Background(), "task"); err == nil {
+	if _, err := agent.Run(context.Background(), "task", nil); err == nil {
 		t.Fatal("Run() error = nil")
 	}
 
@@ -193,7 +229,7 @@ func TestAgentRunTraceError(t *testing.T) {
 	}
 	response := events[2].Data.(map[string]any)
 	runEnd := events[3].Data.(map[string]any)
-	if response["error"] != "model failed" || runEnd["status"] != "error" || !strings.Contains(runEnd["error"].(string), "model failed") {
+	if !strings.Contains(response["error"].(string), "model failed") || runEnd["status"] != "error" || !strings.Contains(runEnd["error"].(string), "model failed") {
 		t.Fatalf("model response = %#v, run end = %#v", response, runEnd)
 	}
 }
@@ -206,7 +242,7 @@ func TestAgentRunIgnoresTraceStartError(t *testing.T) {
 		t.Fatalf("EnableTrace() error = %v", err)
 	}
 
-	result, err := agent.Run(context.Background(), "task")
+	result, err := agent.Run(context.Background(), "task", nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -240,10 +276,10 @@ func TestAgentRunContinuesConversation(t *testing.T) {
 	}}
 	agent := Agent{model: model, maxTurns: 1}
 
-	if _, err := agent.Run(context.Background(), "first question"); err != nil {
+	if _, err := agent.Run(context.Background(), "first question", nil); err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
-	if _, err := agent.Run(context.Background(), "second question"); err != nil {
+	if _, err := agent.Run(context.Background(), "second question", nil); err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
 
@@ -260,16 +296,40 @@ func TestAgentRunDiscardsFailedConversation(t *testing.T) {
 	}}
 	agent := Agent{model: model, maxTurns: 1}
 
-	if _, err := agent.Run(context.Background(), "failed question"); err == nil {
+	if _, err := agent.Run(context.Background(), "failed question", nil); err == nil {
 		t.Fatal("first Run() error = nil")
 	}
-	if _, err := agent.Run(context.Background(), "new question"); err != nil {
+	if _, err := agent.Run(context.Background(), "new question", nil); err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
 
 	messages := model.requests[1].Messages
 	if len(messages) != 1 || messages[0].Content != "new question" {
 		t.Fatalf("second request messages = %#v", messages)
+	}
+}
+
+func TestAgentRunDoesNotSavePartialStream(t *testing.T) {
+	modelErr := errors.New("stream failed")
+	agent := Agent{
+		model:    streamingErrorModel{err: modelErr},
+		maxTurns: 1,
+		messages: []Message{{Role: "user", Content: "keep"}},
+	}
+	var output strings.Builder
+
+	_, err := agent.Run(context.Background(), "new question", func(delta string) error {
+		output.WriteString(delta)
+		return nil
+	})
+	if !errors.Is(err, modelErr) {
+		t.Fatalf("Run() error = %v, want stream error", err)
+	}
+	if output.String() != "partial" {
+		t.Fatalf("streamed output = %q, want partial", output.String())
+	}
+	if len(agent.messages) != 1 || agent.messages[0].Content != "keep" {
+		t.Fatalf("messages = %#v, want original history", agent.messages)
 	}
 }
 
@@ -280,13 +340,13 @@ func TestAgentReset(t *testing.T) {
 	}}
 	agent := Agent{model: model, maxTurns: 1}
 
-	if _, err := agent.Run(context.Background(), "first question"); err != nil {
+	if _, err := agent.Run(context.Background(), "first question", nil); err != nil {
 		t.Fatalf("first Run() error = %v", err)
 	}
 	if err := agent.Reset(); err != nil {
 		t.Fatalf("Reset() error = %v", err)
 	}
-	if _, err := agent.Run(context.Background(), "second question"); err != nil {
+	if _, err := agent.Run(context.Background(), "second question", nil); err != nil {
 		t.Fatalf("second Run() error = %v", err)
 	}
 
@@ -351,7 +411,7 @@ func TestAgentRunErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.agent.Run(tt.ctx, tt.task)
+			_, err := tt.agent.Run(tt.ctx, tt.task, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Run() error = %v, want to contain %q", err, tt.wantErr)
 			}
@@ -363,8 +423,8 @@ func TestAgentRunModelError(t *testing.T) {
 	modelError := errors.New("failed")
 	model := errorModel{err: modelError}
 	agent := Agent{model: model, maxTurns: 1}
-	_, err := agent.Run(context.Background(), "task")
-	if err == nil || !strings.Contains(err.Error(), "generate response: failed") {
+	_, err := agent.Run(context.Background(), "task", nil)
+	if err == nil || err.Error() != "agent run: failed" {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if !errors.Is(err, modelError) {
@@ -376,6 +436,17 @@ type errorModel struct {
 	err error
 }
 
-func (model errorModel) GenerateResponse(context.Context, ModelRequest) (ModelResponse, error) {
-	return ModelResponse{}, model.err
+func (model errorModel) GenerateResponse(context.Context, ModelRequest) (ModelStream, error) {
+	return nil, model.err
+}
+
+type streamingErrorModel struct {
+	err error
+}
+
+func (model streamingErrorModel) GenerateResponse(context.Context, ModelRequest) (ModelStream, error) {
+	return &stubModelStream{
+		response: ModelResponse{Message: Message{Role: "assistant", Content: "partial"}},
+		err:      model.err,
+	}, nil
 }

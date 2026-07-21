@@ -35,7 +35,7 @@ func TestTraceErrorsDoNotReplaceBusinessResults(t *testing.T) {
 	model := &modelStub{responses: []ModelResponse{{Message: Message{Role: "assistant", Content: "done"}}}}
 	agent := Agent{model: model}
 
-	response, err := agent.callModel(context.Background(), ModelRequest{}, current, 1)
+	response, err := agent.callModel(context.Background(), ModelRequest{}, nil, current, 1)
 	if err != nil || response.Message.Content != "done" {
 		t.Fatalf("callModel() = %#v, %v", response, err)
 	}
@@ -52,7 +52,7 @@ func TestTraceErrorsDoNotReplaceBusinessResults(t *testing.T) {
 
 	modelError := errors.New("model failed")
 	agent.model = errorModel{err: modelError}
-	_, err = agent.callModel(context.Background(), ModelRequest{}, current, 2)
+	_, err = agent.callModel(context.Background(), ModelRequest{}, nil, current, 2)
 	if !errors.Is(err, modelError) {
 		t.Fatalf("callModel() error = %v", err)
 	}

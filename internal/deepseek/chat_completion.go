@@ -35,12 +35,12 @@ type chatCompletionRequest struct {
 	Tools    []toolDefinition
 }
 
-func (client *DeepSeekClient) createChatCompletion(_ context.Context, input chatCompletionRequest) (modelResponse, error) {
+func (client *DeepSeekClient) createChatCompletion(_ context.Context, input chatCompletionRequest) (*chatCompletionStream, error) {
 	if client.apiKey == "" {
-		return modelResponse{}, fmt.Errorf("DeepSeek API key is empty")
+		return nil, fmt.Errorf("DeepSeek API key is empty")
 	}
 	if len(input.Messages) == 0 {
-		return modelResponse{}, fmt.Errorf("DeepSeek chat completion has no messages")
+		return nil, fmt.Errorf("DeepSeek chat completion has no messages")
 	}
 
 	requestBody, err := json.Marshal(struct {
@@ -55,32 +55,30 @@ func (client *DeepSeekClient) createChatCompletion(_ context.Context, input chat
 		Stream:   true,
 	})
 	if err != nil {
-		return modelResponse{}, fmt.Errorf("DeepSeek encode chat completion request: %w", err)
+		return nil, fmt.Errorf("DeepSeek encode chat completion request: %w", err)
 	}
 
 	endpoint := strings.TrimRight(client.baseURL, "/") + "/chat/completions"
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return modelResponse{}, fmt.Errorf("DeepSeek create chat completion request: %w", err)
+		return nil, fmt.Errorf("DeepSeek create chat completion request: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+client.apiKey)
 	request.Header.Set("Content-Type", "application/json")
 
 	httpResponse, err := client.httpClient.Do(request)
 	if err != nil {
-		return modelResponse{}, fmt.Errorf("DeepSeek send chat completion request: %w", err)
+		return nil, fmt.Errorf("DeepSeek send chat completion request: %w", err)
 	}
 	if httpResponse.StatusCode >= http.StatusOK && httpResponse.StatusCode < http.StatusMultipleChoices {
-		streamResponse, err := parseChatCompletionStream(httpResponse.Body)
-		_ = httpResponse.Body.Close()
-		return streamResponse, err
+		return newChatCompletionStream(httpResponse.Body), nil
 	}
 	errorBody, err := io.ReadAll(httpResponse.Body)
 	_ = httpResponse.Body.Close()
 	if err != nil {
-		return modelResponse{}, fmt.Errorf("DeepSeek read chat completion error response: %w", err)
+		return nil, fmt.Errorf("DeepSeek read chat completion error response: %w", err)
 	}
-	return modelResponse{}, fmt.Errorf("DeepSeek chat completion returned %s: %s", httpResponse.Status, errorBody)
+	return nil, fmt.Errorf("DeepSeek chat completion returned %s: %s", httpResponse.Status, errorBody)
 }
 
 type functionCall struct {
@@ -126,51 +124,80 @@ type modelResponse struct {
 	FinishReason string
 }
 
-func parseChatCompletionStream(input io.Reader) (modelResponse, error) {
-	response := modelResponse{}
-	var content, reasoning strings.Builder
-	contentSeen, reasoningSeen, roleSeen, done := false, false, false, false
-	toolCalls := map[int]*toolCall{}
+type chatCompletionStream struct {
+	body          io.ReadCloser
+	reader        *bufio.Reader
+	response      modelResponse
+	content       strings.Builder
+	reasoning     strings.Builder
+	contentSeen   bool
+	reasoningSeen bool
+	roleSeen      bool
+	done          bool
+	toolCalls     map[int]*toolCall
+}
 
-	reader := bufio.NewReader(input)
+type chatCompletionEvent struct {
+	TextDelta string
+	Response  *modelResponse
+}
+
+func newChatCompletionStream(body io.ReadCloser) *chatCompletionStream {
+	return &chatCompletionStream{
+		body:      body,
+		reader:    bufio.NewReader(body),
+		toolCalls: map[int]*toolCall{},
+	}
+}
+
+func (stream *chatCompletionStream) Recv() (chatCompletionEvent, error) {
+	if stream.done {
+		return chatCompletionEvent{}, io.EOF
+	}
 	for {
-		line, readErr := reader.ReadString('\n')
+		line, readErr := stream.reader.ReadString('\n')
 		if readErr != nil && readErr != io.EOF {
-			return modelResponse{}, fmt.Errorf("DeepSeek read chat completion stream: %w", readErr)
+			return chatCompletionEvent{}, fmt.Errorf("DeepSeek read chat completion stream: %w", readErr)
 		}
 
+		var text strings.Builder
 		if strings.HasPrefix(line, "data:") {
 			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 			if data == "[DONE]" {
-				done = true
-				break
+				stream.done = true
+				response, err := stream.finalResponse()
+				if err != nil {
+					return chatCompletionEvent{}, err
+				}
+				return chatCompletionEvent{Response: &response}, nil
 			}
 
 			var chunk chatCompletionChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				return modelResponse{}, fmt.Errorf("DeepSeek decode chat completion stream: %w", err)
+				return chatCompletionEvent{}, fmt.Errorf("DeepSeek decode chat completion stream: %w", err)
 			}
 			for _, choice := range chunk.Choices {
 				if role := choice.Delta.Role; role != "" && role != "assistant" {
-					return modelResponse{}, fmt.Errorf("DeepSeek chat completion message role is %q, want assistant", role)
+					return chatCompletionEvent{}, fmt.Errorf("DeepSeek chat completion message role is %q, want assistant", role)
 				}
-				roleSeen = roleSeen || choice.Delta.Role == "assistant"
+				stream.roleSeen = stream.roleSeen || choice.Delta.Role == "assistant"
 				if choice.Delta.Content != nil {
-					contentSeen = true
-					content.WriteString(*choice.Delta.Content)
+					stream.contentSeen = true
+					stream.content.WriteString(*choice.Delta.Content)
+					text.WriteString(*choice.Delta.Content)
 				}
 				if choice.Delta.ReasoningContent != nil {
-					reasoningSeen = true
-					reasoning.WriteString(*choice.Delta.ReasoningContent)
+					stream.reasoningSeen = true
+					stream.reasoning.WriteString(*choice.Delta.ReasoningContent)
 				}
 				if choice.FinishReason != nil {
-					response.FinishReason = *choice.FinishReason
+					stream.response.FinishReason = *choice.FinishReason
 				}
 				for _, delta := range choice.Delta.ToolCalls {
-					call := toolCalls[delta.Index]
+					call := stream.toolCalls[delta.Index]
 					if call == nil {
 						call = &toolCall{}
-						toolCalls[delta.Index] = call
+						stream.toolCalls[delta.Index] = call
 					}
 					call.ID += delta.ID
 					call.Type += delta.Type
@@ -179,34 +206,45 @@ func parseChatCompletionStream(input io.Reader) (modelResponse, error) {
 				}
 			}
 		}
+		if text.Len() > 0 {
+			return chatCompletionEvent{TextDelta: text.String()}, nil
+		}
 		if readErr == io.EOF {
-			break
+			return chatCompletionEvent{}, fmt.Errorf("DeepSeek chat completion stream ended before [DONE]")
 		}
 	}
-	if !done {
-		return modelResponse{}, fmt.Errorf("DeepSeek chat completion stream ended before [DONE]")
+}
+
+func (stream *chatCompletionStream) finalResponse() (modelResponse, error) {
+	if !stream.done {
+		return modelResponse{}, fmt.Errorf("DeepSeek chat completion stream is not complete")
 	}
-	if response.FinishReason == "" {
+	if stream.response.FinishReason == "" {
 		return modelResponse{}, fmt.Errorf("DeepSeek chat completion stream has no finish reason")
 	}
-	if !roleSeen {
+	if !stream.roleSeen {
 		return modelResponse{}, fmt.Errorf("DeepSeek chat completion stream has no message role")
 	}
-	response.Message.Role = "assistant"
-	if contentSeen {
-		value := content.String()
-		response.Message.Content = &value
+	stream.response.Message.Role = "assistant"
+	if stream.contentSeen {
+		value := stream.content.String()
+		stream.response.Message.Content = &value
 	}
-	if reasoningSeen {
-		value := reasoning.String()
-		response.Message.ReasoningContent = &value
+	if stream.reasoningSeen {
+		value := stream.reasoning.String()
+		stream.response.Message.ReasoningContent = &value
 	}
-	for index := 0; index < len(toolCalls); index++ {
-		call := toolCalls[index]
+	stream.response.Message.ToolCalls = nil
+	for index := 0; index < len(stream.toolCalls); index++ {
+		call := stream.toolCalls[index]
 		if call == nil {
 			return modelResponse{}, fmt.Errorf("DeepSeek chat completion stream is missing tool call index %d", index)
 		}
-		response.Message.ToolCalls = append(response.Message.ToolCalls, *call)
+		stream.response.Message.ToolCalls = append(stream.response.Message.ToolCalls, *call)
 	}
-	return response, nil
+	return stream.response, nil
+}
+
+func (stream *chatCompletionStream) Close() error {
+	return stream.body.Close()
 }

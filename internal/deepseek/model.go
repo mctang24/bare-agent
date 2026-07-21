@@ -8,7 +8,7 @@ import (
 )
 
 // GenerateResponse generates a response with DeepSeek.
-func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agent.ModelRequest) (agent.ModelResponse, error) {
+func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agent.ModelRequest) (agent.ModelStream, error) {
 	messages := make([]message, 0, len(request.Messages)+1)
 	if request.Instructions != "" {
 		messages = append(messages, message{Role: "system", Content: &request.Instructions})
@@ -18,17 +18,17 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 		// RawMessage 存在时以其为准，忽略只读的 Content 和 ToolCalls；手动构造 assistant 消息时不设置 RawMessage。
 		if len(input.RawMessage) > 0 {
 			if input.Role != "" && input.Role != "assistant" {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek raw message %d has conflicting role %q", index, input.Role)
+				return nil, fmt.Errorf("DeepSeek raw message %d has conflicting role %q", index, input.Role)
 			}
 			if len(input.ToolResults) > 0 {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek assistant message %d contains tool results", index)
+				return nil, fmt.Errorf("DeepSeek assistant message %d contains tool results", index)
 			}
 			var raw message
 			if err := json.Unmarshal(input.RawMessage, &raw); err != nil {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek decode raw message %d: %w", index, err)
+				return nil, fmt.Errorf("DeepSeek decode raw message %d: %w", index, err)
 			}
 			if raw.Role != "assistant" {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek raw message %d role is %q, want assistant", index, raw.Role)
+				return nil, fmt.Errorf("DeepSeek raw message %d role is %q, want assistant", index, raw.Role)
 			}
 			messages = append(messages, raw)
 			continue
@@ -38,12 +38,12 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 		switch input.Role {
 		case "user":
 			if len(input.ToolCalls) > 0 || len(input.ToolResults) > 0 {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek user message %d contains tool data", index)
+				return nil, fmt.Errorf("DeepSeek user message %d contains tool data", index)
 			}
 			messages = append(messages, message{Role: "user", Content: &input.Content})
 		case "assistant":
 			if len(input.ToolResults) > 0 {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek assistant message %d contains tool results", index)
+				return nil, fmt.Errorf("DeepSeek assistant message %d contains tool results", index)
 			}
 			converted := message{Role: "assistant", Content: &input.Content}
 			for _, call := range input.ToolCalls {
@@ -59,17 +59,17 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 			messages = append(messages, converted)
 		case "tool":
 			if len(input.ToolResults) == 0 {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek tool message %d has no results", index)
+				return nil, fmt.Errorf("DeepSeek tool message %d has no results", index)
 			}
 			if input.Content != "" || len(input.ToolCalls) > 0 {
-				return agent.ModelResponse{}, fmt.Errorf("DeepSeek tool message %d contains non-result data", index)
+				return nil, fmt.Errorf("DeepSeek tool message %d contains non-result data", index)
 			}
 			for _, result := range input.ToolResults {
 				content := result.Content
 				messages = append(messages, message{Role: "tool", Content: &content, ToolCallID: result.ToolCallID})
 			}
 		default:
-			return agent.ModelResponse{}, fmt.Errorf("DeepSeek message %d has unsupported role %q", index, input.Role)
+			return nil, fmt.Errorf("DeepSeek message %d has unsupported role %q", index, input.Role)
 		}
 	}
 
@@ -85,20 +85,36 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 		})
 	}
 
-	response, err := client.createChatCompletion(ctx, chatCompletionRequest{Messages: messages, Tools: definitions})
+	stream, err := client.createChatCompletion(ctx, chatCompletionRequest{Messages: messages, Tools: definitions})
 	if err != nil {
-		return agent.ModelResponse{}, err
+		return nil, err
 	}
+	return &modelStream{stream: stream}, nil
+}
+
+type modelStream struct {
+	stream *chatCompletionStream
+}
+
+func (stream *modelStream) Recv() (agent.ModelStreamEvent, error) {
+	event, err := stream.stream.Recv()
+	if err != nil {
+		return agent.ModelStreamEvent{}, err
+	}
+	if event.Response == nil {
+		return agent.ModelStreamEvent{TextDelta: event.TextDelta}, nil
+	}
+	response := *event.Response
 	if response.FinishReason != "stop" && response.FinishReason != "tool_calls" {
-		return agent.ModelResponse{}, fmt.Errorf("DeepSeek chat completion stopped with finish reason %q", response.FinishReason)
+		return agent.ModelStreamEvent{}, fmt.Errorf("DeepSeek chat completion stopped with finish reason %q", response.FinishReason)
 	}
 	if response.FinishReason == "tool_calls" && len(response.Message.ToolCalls) == 0 {
-		return agent.ModelResponse{}, fmt.Errorf("DeepSeek chat completion stopped for tool calls but returned none")
+		return agent.ModelStreamEvent{}, fmt.Errorf("DeepSeek chat completion stopped for tool calls but returned none")
 	}
 
 	rawMessage, err := json.Marshal(response.Message)
 	if err != nil {
-		return agent.ModelResponse{}, fmt.Errorf("DeepSeek encode raw assistant message: %w", err)
+		return agent.ModelStreamEvent{}, fmt.Errorf("DeepSeek encode raw assistant message: %w", err)
 	}
 	output := agent.Message{Role: "assistant", RawMessage: rawMessage}
 	if response.Message.Content != nil {
@@ -112,5 +128,10 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 		})
 	}
 
-	return agent.ModelResponse{Message: output}, nil
+	finalResponse := agent.ModelResponse{Message: output}
+	return agent.ModelStreamEvent{Response: &finalResponse}, nil
+}
+
+func (stream *modelStream) Close() error {
+	return stream.stream.Close()
 }

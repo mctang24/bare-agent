@@ -5,6 +5,7 @@ import (
 	"bare-agent/internal/trace"
 	"context"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -68,7 +69,7 @@ func NewAgent(root string, model Model, instructions string, maxTurns ...int) (*
 }
 
 // Run continues the conversation until the model returns a final response.
-func (agent *Agent) Run(ctx context.Context, task string) (result RunResult, runErr error) {
+func (agent *Agent) Run(ctx context.Context, task string, onTextDelta TextDeltaHandler) (result RunResult, runErr error) {
 	if task == "" {
 		return RunResult{}, fmt.Errorf("agent run: task is empty")
 	}
@@ -98,7 +99,7 @@ func (agent *Agent) Run(ctx context.Context, task string) (result RunResult, run
 			Messages:     messages,
 			Tools:        definitions,
 		}
-		response, err := agent.callModel(ctx, request, currentTrace, turn+1)
+		response, err := agent.callModel(ctx, request, onTextDelta, currentTrace, turn+1)
 		if err != nil {
 			return RunResult{}, err
 		}
@@ -124,6 +125,96 @@ func (agent *Agent) Run(ctx context.Context, task string) (result RunResult, run
 	}
 
 	return RunResult{}, fmt.Errorf("agent run: reached maximum of %d turns", agent.maxTurns)
+}
+
+func (agent *Agent) callModel(ctx context.Context, request ModelRequest, onTextDelta TextDeltaHandler, current *runTrace, turn int) (ModelResponse, error) {
+	startedAt := time.Now()
+	if err := current.append(trace.Event{
+		Timestamp: startedAt.UTC(),
+		Type:      "model_request",
+		Turn:      turn,
+	}); err != nil {
+		reportTraceError("model_request", err)
+	}
+
+	stream, err := agent.model.GenerateResponse(ctx, request)
+	var response *ModelResponse
+	if err == nil {
+		defer stream.Close()
+		for {
+			event, receiveErr := stream.Recv()
+			if receiveErr == io.EOF {
+				err = fmt.Errorf("generate response: model stream ended without final response")
+				break
+			}
+			if receiveErr != nil {
+				err = fmt.Errorf("generate response: %w", receiveErr)
+				break
+			}
+			if event.Response != nil {
+				response = event.Response
+				break
+			}
+			if event.TextDelta != "" && onTextDelta != nil {
+				if handleErr := onTextDelta(event.TextDelta); handleErr != nil {
+					err = fmt.Errorf("write streamed response: %w", handleErr)
+					break
+				}
+			}
+		}
+	}
+	var data map[string]any
+	if err != nil {
+		data = map[string]any{"error": err.Error()}
+	} else {
+		data = map[string]any{"content": response.Message.Content, "toolCalls": response.Message.ToolCalls}
+	}
+	if traceErr := current.append(trace.Event{
+		Timestamp:  time.Now().UTC(),
+		Type:       "model_response",
+		Turn:       turn,
+		DurationMS: time.Since(startedAt).Milliseconds(),
+		Data:       data,
+	}); traceErr != nil {
+		reportTraceError("model_response", traceErr)
+	}
+	if err != nil {
+		return ModelResponse{}, fmt.Errorf("agent run: %w", err)
+	}
+	return *response, nil
+}
+
+func (agent *Agent) callTool(ctx context.Context, call ToolCall, current *runTrace, turn int) (ToolResult, error) {
+	startedAt := time.Now()
+	if err := current.append(trace.Event{
+		Timestamp: startedAt.UTC(),
+		Type:      "tool_call",
+		Turn:      turn,
+		Data:      map[string]any{"id": call.ID, "name": call.Name, "arguments": call.Arguments},
+	}); err != nil {
+		reportTraceError("tool_call", err)
+	}
+
+	result, err := agent.executeToolCall(ctx, call)
+	var data map[string]any
+	if err != nil {
+		data = map[string]any{"id": call.ID, "error": err.Error()}
+	} else {
+		data = map[string]any{"id": call.ID, "content": result.Content, "isError": result.IsError}
+	}
+	if traceErr := current.append(trace.Event{
+		Timestamp:  time.Now().UTC(),
+		Type:       "tool_result",
+		Turn:       turn,
+		DurationMS: time.Since(startedAt).Milliseconds(),
+		Data:       data,
+	}); traceErr != nil {
+		reportTraceError("tool_result", traceErr)
+	}
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("agent run: %w", err)
+	}
+	return result, nil
 }
 
 // Reset clears the conversation history and starts a new traced session.

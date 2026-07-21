@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -97,77 +96,4 @@ func (current *runTrace) finish(runErr error) error {
 		DurationMS: time.Since(current.startedAt).Milliseconds(),
 		Data:       data,
 	})
-}
-
-func (agent *Agent) callModel(ctx context.Context, request ModelRequest, current *runTrace, turn int) (ModelResponse, error) {
-	startedAt := time.Now()
-	if err := current.append(trace.Event{
-		Timestamp: startedAt.UTC(),
-		Type:      "model_request",
-		Turn:      turn,
-	}); err != nil {
-		reportTraceError("model_request", err)
-	}
-
-	response, err := agent.model.GenerateResponse(ctx, request)
-	if err != nil {
-		traceErr := current.append(trace.Event{
-			Timestamp:  time.Now().UTC(),
-			Type:       "model_response",
-			Turn:       turn,
-			DurationMS: time.Since(startedAt).Milliseconds(),
-			Data:       map[string]any{"error": err.Error()},
-		})
-		modelErr := fmt.Errorf("agent run: generate response: %w", err)
-		reportTraceError("model_response", traceErr)
-		return ModelResponse{}, modelErr
-	}
-
-	data := map[string]any{"content": response.Message.Content, "toolCalls": response.Message.ToolCalls}
-	if err := current.append(trace.Event{
-		Timestamp:  time.Now().UTC(),
-		Type:       "model_response",
-		Turn:       turn,
-		DurationMS: time.Since(startedAt).Milliseconds(),
-		Data:       data,
-	}); err != nil {
-		reportTraceError("model_response", err)
-	}
-	return response, nil
-}
-
-func (agent *Agent) callTool(ctx context.Context, call ToolCall, current *runTrace, turn int) (ToolResult, error) {
-	startedAt := time.Now()
-	if err := current.append(trace.Event{
-		Timestamp: startedAt.UTC(),
-		Type:      "tool_call",
-		Turn:      turn,
-		Data:      map[string]any{"id": call.ID, "name": call.Name, "arguments": call.Arguments},
-	}); err != nil {
-		reportTraceError("tool_call", err)
-	}
-
-	result, err := agent.executeToolCall(ctx, call)
-	if err != nil {
-		traceErr := current.append(trace.Event{
-			Timestamp:  time.Now().UTC(),
-			Type:       "tool_result",
-			Turn:       turn,
-			DurationMS: time.Since(startedAt).Milliseconds(),
-			Data:       map[string]any{"id": call.ID, "error": err.Error()},
-		})
-		reportTraceError("tool_result", traceErr)
-		return ToolResult{}, fmt.Errorf("agent run: %w", err)
-	}
-
-	if err := current.append(trace.Event{
-		Timestamp:  time.Now().UTC(),
-		Type:       "tool_result",
-		Turn:       turn,
-		DurationMS: time.Since(startedAt).Milliseconds(),
-		Data:       map[string]any{"id": call.ID, "content": result.Content, "isError": result.IsError},
-	}); err != nil {
-		reportTraceError("tool_result", err)
-	}
-	return result, nil
 }

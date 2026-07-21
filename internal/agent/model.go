@@ -7,7 +7,19 @@ import (
 
 // Model is the provider-independent interface used by Agent.
 type Model interface {
-	GenerateResponse(context.Context, ModelRequest) (ModelResponse, error)
+	GenerateResponse(context.Context, ModelRequest) (ModelStream, error)
+}
+
+type TextDeltaHandler func(string) error
+
+type ModelStreamEvent struct {
+	TextDelta string
+	Response  *ModelResponse
+}
+
+type ModelStream interface {
+	Recv() (ModelStreamEvent, error)
+	Close() error
 }
 
 type ModelRequest struct {

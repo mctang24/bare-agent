@@ -4,6 +4,7 @@ import (
 	"bare-agent/internal/agent"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -13,12 +14,36 @@ type interactiveModel struct {
 	requests  []agent.ModelRequest
 }
 
-func (model *interactiveModel) GenerateResponse(_ context.Context, request agent.ModelRequest) (agent.ModelResponse, error) {
+func (model *interactiveModel) GenerateResponse(_ context.Context, request agent.ModelRequest) (agent.ModelStream, error) {
 	model.requests = append(model.requests, request)
 	response := model.responses[0]
 	model.responses = model.responses[1:]
-	return response, nil
+	return &interactiveStream{response: response}, nil
 }
+
+type interactiveStream struct {
+	response agent.ModelResponse
+	sentText bool
+	finished bool
+	err      error
+}
+
+func (stream *interactiveStream) Recv() (agent.ModelStreamEvent, error) {
+	if stream.finished {
+		return agent.ModelStreamEvent{}, io.EOF
+	}
+	if stream.sentText {
+		if stream.err != nil {
+			return agent.ModelStreamEvent{}, stream.err
+		}
+		stream.finished = true
+		return agent.ModelStreamEvent{Response: &stream.response}, nil
+	}
+	stream.sentText = true
+	return agent.ModelStreamEvent{TextDelta: stream.response.Message.Content}, nil
+}
+
+func (stream *interactiveStream) Close() error { return nil }
 
 func TestRunInteractive(t *testing.T) {
 	model := &interactiveModel{responses: []agent.ModelResponse{
@@ -47,12 +72,16 @@ type failingInteractiveModel struct {
 	calls int
 }
 
-func (model *failingInteractiveModel) GenerateResponse(_ context.Context, _ agent.ModelRequest) (agent.ModelResponse, error) {
+func (model *failingInteractiveModel) GenerateResponse(context.Context, agent.ModelRequest) (agent.ModelStream, error) {
 	model.calls++
 	if model.calls == 1 {
-		return agent.ModelResponse{}, errors.New("failed")
+		return &interactiveStream{
+			response: agent.ModelResponse{Message: agent.Message{Role: "assistant", Content: "partial"}},
+			err:      errors.New("failed"),
+		}, nil
 	}
-	return agent.ModelResponse{Message: agent.Message{Role: "assistant", Content: "done"}}, nil
+	response := agent.ModelResponse{Message: agent.Message{Role: "assistant", Content: "done"}}
+	return &interactiveStream{response: response}, nil
 }
 
 func TestRunInteractiveContinuesAfterRunError(t *testing.T) {
@@ -68,7 +97,26 @@ func TestRunInteractiveContinuesAfterRunError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runInteractive() error = %v", err)
 	}
-	if model.calls != 2 || output.String() != "> > done\n> " || !strings.Contains(errorOutput.String(), "failed") {
+	if model.calls != 2 || output.String() != "> partial\n> done\n> " || !strings.Contains(errorOutput.String(), "failed") {
 		t.Fatalf("calls = %d, output = %q, error output = %q", model.calls, output.String(), errorOutput.String())
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func TestRunTaskReturnsOutputError(t *testing.T) {
+	model := &interactiveModel{responses: []agent.ModelResponse{{Message: agent.Message{Role: "assistant", Content: "done"}}}}
+	runner, err := agent.NewAgent(t.TempDir(), model, "")
+	if err != nil {
+		t.Fatalf("NewAgent() error = %v", err)
+	}
+
+	err = runTask(context.Background(), runner, "task", failingWriter{})
+	if err == nil || !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("runTask() error = %v, want write failure", err)
 	}
 }
