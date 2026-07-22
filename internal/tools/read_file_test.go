@@ -32,7 +32,7 @@ func TestReadFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := readFile(tt.ctx, root, tt.requested)
+			path, got, err := readFile(tt.ctx, root, tt.requested)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -45,6 +45,13 @@ func TestReadFile(t *testing.T) {
 			if got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
+			wantPath, err := filepath.EvalSymlinks(filepath.Join(root, tt.requested))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if path != wantPath {
+				t.Fatalf("path = %q, want %q", path, wantPath)
+			}
 		})
 	}
 }
@@ -55,7 +62,7 @@ func TestExecuteReadFile(t *testing.T) {
 		t.Fatalf("write test file: %v", err)
 	}
 
-	result, err := executeReadFile(context.Background(), root, `{"path":"file.txt"}`)
+	result, err := NewFileTools().executeReadFile(context.Background(), root, `{"path":"file.txt"}`)
 	if err != nil {
 		t.Fatalf("executeReadFile() error = %v", err)
 	}
@@ -80,7 +87,7 @@ func TestExecuteReadFileErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := executeReadFile(tt.ctx, root, tt.arguments)
+			_, err := NewFileTools().executeReadFile(tt.ctx, root, tt.arguments)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("executeReadFile() error = %v, want to contain %q", err, tt.wantErr)
 			}

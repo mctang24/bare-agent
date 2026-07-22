@@ -16,7 +16,7 @@ func TestAgentExecuteTool(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write test file: %v", err)
 	}
-	agent := Agent{root: root, tools: tools.ReadOnlyTools()}
+	agent := Agent{root: root, tools: tools.NewFileTools().Definitions()}
 
 	result, err := agent.executeTool(context.Background(), "read_file", `{"path":"file.txt"}`)
 	if err != nil {

@@ -2,41 +2,25 @@ package tools
 
 import "testing"
 
-func TestReadOnlyTools(t *testing.T) {
-	registered := ReadOnlyTools()
-	if len(registered) != 3 {
-		t.Fatalf("ReadOnlyTools() length = %d, want 3", len(registered))
+func TestFileToolDefinitions(t *testing.T) {
+	registered := NewFileTools().Definitions()
+	if len(registered) != 5 {
+		t.Fatalf("Tools() length = %d, want 5", len(registered))
 	}
-
 	wantNames := map[string]bool{
-		"list_files":  false,
-		"read_file":   false,
-		"search_text": false,
+		"list_files": false, "read_file": false, "search_text": false,
+		"edit_file": false, "write_file": false,
 	}
 	for _, tool := range registered {
-		seen, exists := wantNames[tool.Name]
-		if !exists {
-			t.Errorf("ReadOnlyTools() contains unexpected tool %q", tool.Name)
-			continue
+		if _, ok := wantNames[tool.Name]; !ok {
+			t.Fatalf("Tools() contains unexpected tool %q", tool.Name)
 		}
-		if seen {
-			t.Errorf("ReadOnlyTools() contains duplicate tool %q", tool.Name)
+		if wantNames[tool.Name] {
+			t.Fatalf("Tools() contains duplicate tool %q", tool.Name)
 		}
 		wantNames[tool.Name] = true
-		if tool.Description == "" {
-			t.Errorf("tool %q has empty description", tool.Name)
-		}
-		if tool.Parameters == nil {
-			t.Errorf("tool %q has nil parameters", tool.Name)
-		}
-		if tool.Execute == nil {
-			t.Errorf("tool %q has nil execute function", tool.Name)
-		}
-	}
-
-	for name, seen := range wantNames {
-		if !seen {
-			t.Errorf("ReadOnlyTools() is missing tool %q", name)
+		if tool.Description == "" || tool.Parameters == nil || tool.Execute == nil {
+			t.Fatalf("tool %q has incomplete definition", tool.Name)
 		}
 	}
 }

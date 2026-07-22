@@ -10,7 +10,7 @@ import (
 
 // listFiles returns the direct children of a directory inside root.
 func listFiles(_ context.Context, root, requested string) ([]string, error) {
-	directory, err := resolvePath(root, requested)
+	directory, err := resolveExistingPath(root, requested)
 	if err != nil {
 		return nil, fmt.Errorf("list files in %q: %w", requested, err)
 	}

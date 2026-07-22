@@ -41,8 +41,8 @@ func TestNewAgent(t *testing.T) {
 	if created.model != model || created.instructions != "inspect" || created.maxTurns != defaultMaxTurns {
 		t.Fatalf("NewAgent() = %#v", created)
 	}
-	if len(created.tools) != 3 {
-		t.Fatalf("NewAgent() tool count = %d, want 3", len(created.tools))
+	if len(created.tools) != 5 {
+		t.Fatalf("NewAgent() tool count = %d, want 5", len(created.tools))
 	}
 
 	configured, err := NewAgent(t.TempDir(), model, "", 3)
@@ -148,6 +148,63 @@ func TestAgentRun(t *testing.T) {
 	toolMessage := model.requests[1].Messages[2]
 	if toolMessage.Role != "tool" || len(toolMessage.ToolResults) != 1 || toolMessage.ToolResults[0].Content != "result" {
 		t.Fatalf("tool message = %#v", toolMessage)
+	}
+}
+
+func TestAgentRunEditsFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model := &modelStub{responses: []ModelResponse{
+		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "read", Name: "read_file", Arguments: `{"path":"file.txt"}`}}}},
+		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "edit", Name: "edit_file", Arguments: `{"path":"file.txt","old_string":"before","new_string":"after"}`}}}},
+		{Message: Message{Role: "assistant", Content: "done"}},
+	}}
+	runner, err := NewAgent(root, model, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.SetWriteApprover(func(context.Context, tools.WriteRequest) (bool, error) { return true, nil })
+	result, err := runner.Run(context.Background(), "edit file", nil)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != "after" || result.Content != "done" {
+		t.Fatalf("content = %q, result = %#v, error = %v", content, result, err)
+	}
+	if len(model.requests) != 3 || len(model.requests[2].Messages) != 5 {
+		t.Fatalf("requests = %#v", model.requests)
+	}
+	toolResults := model.requests[2].Messages[4].ToolResults
+	if len(toolResults) != 1 || toolResults[0].IsError || !strings.Contains(toolResults[0].Content, "replaced 1 occurrence") {
+		t.Fatalf("tool results = %#v", toolResults)
+	}
+}
+
+func TestAgentRunReturnsWriteDenialToModel(t *testing.T) {
+	root := t.TempDir()
+	model := &modelStub{responses: []ModelResponse{
+		{Message: Message{Role: "assistant", ToolCalls: []ToolCall{{ID: "write", Name: "write_file", Arguments: `{"path":"new.txt","content":"data"}`}}}},
+		{Message: Message{Role: "assistant", Content: "cancelled"}},
+	}}
+	runner, err := NewAgent(root, model, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.SetWriteApprover(func(context.Context, tools.WriteRequest) (bool, error) { return false, nil })
+	result, err := runner.Run(context.Background(), "create file", nil)
+	if err != nil || result.Content != "cancelled" {
+		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("new file stat error = %v", err)
+	}
+	toolResults := model.requests[1].Messages[2].ToolResults
+	if len(toolResults) != 1 || !toolResults[0].IsError || !strings.Contains(toolResults[0].Content, "user denied") {
+		t.Fatalf("tool results = %#v", toolResults)
 	}
 }
 

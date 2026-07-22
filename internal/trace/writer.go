@@ -44,6 +44,7 @@ func (w Writer) Append(event Event) error {
 	}
 	encoded = append(encoded, '\n')
 
+	// Trace files may contain prompts and tool results, so only the owner can access them.
 	file, err := os.OpenFile(w.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("append trace event: open file: %w", err)

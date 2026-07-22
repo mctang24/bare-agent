@@ -2,6 +2,8 @@ package main
 
 import (
 	"bare-agent/internal/agent"
+	"bare-agent/internal/tools"
+	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -118,5 +120,43 @@ func TestRunTaskReturnsOutputError(t *testing.T) {
 	err = runTask(context.Background(), runner, "task", failingWriter{})
 	if err == nil || !strings.Contains(err.Error(), "write failed") {
 		t.Fatalf("runTask() error = %v, want write failure", err)
+	}
+}
+
+func TestScannerWriteApprover(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		approved bool
+	}{
+		{name: "enter approves", input: "\n", approved: true},
+		{name: "yes approves", input: "yes\n", approved: true},
+		{name: "no denies", input: "no\n", approved: false},
+		{name: "invalid answer retries", input: "maybe\nn\n", approved: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output strings.Builder
+			approve := newScannerWriteApprover(bufio.NewScanner(strings.NewReader(tt.input)), &output)
+			approved, err := approve(context.Background(), tools.WriteRequest{Tool: "write_file", Path: "main.go"})
+			if err != nil || approved != tt.approved {
+				t.Fatalf("approved = %v, error = %v", approved, err)
+			}
+			if !strings.Contains(output.String(), "write_file") || !strings.Contains(output.String(), "main.go") {
+				t.Fatalf("output = %q", output.String())
+			}
+		})
+	}
+}
+
+func TestScannerWriteApproverEscapesPath(t *testing.T) {
+	var output strings.Builder
+	approve := newScannerWriteApprover(bufio.NewScanner(strings.NewReader("n\n")), &output)
+	_, err := approve(context.Background(), tools.WriteRequest{Tool: "write_file", Path: "main.go\n允许写入其他文件"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "main.go\n允许") || !strings.Contains(output.String(), `main.go\n允许`) {
+		t.Fatalf("output = %q", output.String())
 	}
 }

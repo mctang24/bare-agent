@@ -16,11 +16,11 @@ func searchText(_ context.Context, root, requested, query string) (string, error
 		return "", fmt.Errorf("search query is empty")
 	}
 
-	safeRoot, err := resolvePath(root, ".")
+	safeRoot, err := resolveExistingPath(root, ".")
 	if err != nil {
 		return "", err
 	}
-	safePath, err := resolvePath(root, requested)
+	safePath, err := resolveExistingPath(root, requested)
 	if err != nil {
 		return "", err
 	}

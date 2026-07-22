@@ -4,6 +4,7 @@ import (
 	"bare-agent/internal/agent"
 	"bare-agent/internal/deepseek"
 	"bare-agent/internal/trace"
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -43,6 +44,7 @@ func main() {
 		}
 		return
 	}
+	runner.SetWriteApprover(newScannerWriteApprover(bufio.NewScanner(os.Stdin), os.Stdout))
 	if err := runTask(context.Background(), runner, config.task, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

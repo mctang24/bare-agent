@@ -47,25 +47,25 @@ func TestResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolvePath(root, tt.requested)
+			got, err := resolveExistingPath(root, tt.requested)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("resolvePath() error = nil, want an error; got %q", got)
+					t.Fatalf("resolveExistingPath() error = nil, want an error; got %q", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolvePath() unexpected error: %v", err)
+				t.Fatalf("resolveExistingPath() unexpected error: %v", err)
 			}
 			if got != tt.want {
-				t.Fatalf("resolvePath() = %q, want %q", got, tt.want)
+				t.Fatalf("resolveExistingPath() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 
 	t.Run("root is a file", func(t *testing.T) {
-		if _, err := resolvePath(inside, "."); err == nil {
-			t.Fatal("resolvePath() error = nil, want an error")
+		if _, err := resolveExistingPath(inside, "."); err == nil {
+			t.Fatal("resolveExistingPath() error = nil, want an error")
 		}
 	})
 }

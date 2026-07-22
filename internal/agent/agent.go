@@ -20,6 +20,7 @@ type Agent struct {
 	messages     []Message
 	traceWriter  *trace.Writer
 	sessionID    string
+	fileTools    *tools.FileTools
 }
 
 // EnableTrace enables JSONL tracing for the agent session.
@@ -40,7 +41,7 @@ type RunResult struct {
 	Content string
 }
 
-// NewAgent creates an agent with the read-only tools.
+// NewAgent creates an agent with workspace tools.
 func NewAgent(root string, model Model, instructions string, maxTurns ...int) (*Agent, error) {
 	if root == "" {
 		return nil, fmt.Errorf("new agent: root is empty")
@@ -59,13 +60,21 @@ func NewAgent(root string, model Model, instructions string, maxTurns ...int) (*
 		turns = maxTurns[0]
 	}
 
+	fileTools := tools.NewFileTools()
 	return &Agent{
 		root:         root,
-		tools:        tools.ReadOnlyTools(),
+		tools:        fileTools.Definitions(),
 		model:        model,
 		instructions: instructions,
 		maxTurns:     turns,
+		fileTools:    fileTools,
 	}, nil
+}
+
+func (agent *Agent) SetWriteApprover(approver tools.WriteApprover) {
+	if agent.fileTools != nil {
+		agent.fileTools.SetWriteApprover(approver)
+	}
 }
 
 // Run continues the conversation until the model returns a final response.
@@ -236,5 +245,8 @@ func (agent *Agent) Reset() error {
 		}
 	}
 	agent.messages = nil
+	if agent.fileTools != nil {
+		agent.fileTools.ResetReadState()
+	}
 	return nil
 }
