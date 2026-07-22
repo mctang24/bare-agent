@@ -9,6 +9,11 @@ import (
 	"os"
 )
 
+const systemPrompt = "当用户给出明确的符号名或文本时，先使用 search_text 定位，不要先遍历目录。" +
+	"没有依赖关系的工具调用应在同一轮发出。" +
+	"需要调用工具时，只返回工具调用，不要输出计划、过程说明或过渡语。" +
+	"获得足够信息后再回答用户；回答结论先行、务必简洁，只包含与问题直接相关的内容。"
+
 func main() {
 	config, err := parseArgs(os.Args[1:])
 	if err != nil {
@@ -20,7 +25,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	runner, err := agent.NewAgent(config.root, client, "")
+	runner, err := agent.NewAgent(config.root, client, systemPrompt)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
