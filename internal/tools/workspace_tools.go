@@ -56,23 +56,23 @@ func (workspaceTools *WorkspaceTools) Definitions() []Tool {
 	return []Tool{
 		{
 			Name:        "list_files",
-			Description: "List the direct children of a directory.",
+			Description: "List the direct children of a directory. Use this to find file names or understand directory structure; it does not search file contents.",
 			Parameters:  ObjectSchema(map[string]Schema{"path": pathProperty}, "path"),
 			Execute:     executeListFiles,
 		},
 		{
 			Name:        "read_file",
-			Description: "Read the complete contents of a file. When multiple independent files are known, call read_file for all of them in the same tool round. Only the path parameter is supported; line ranges, offsets, and partial reads are not supported.",
+			Description: "Read the complete contents of a file with line numbers. Line-number prefixes are display metadata and are not part of the file content. When multiple independent files are known, call read_file for all of them in the same tool round. Only the path parameter is supported; line ranges, offsets, and partial reads are not supported.",
 			Parameters:  ObjectSchema(map[string]Schema{"path": pathProperty}, "path"),
 			Execute:     workspaceTools.executeReadFile,
 		},
 		{
 			Name:        "search_text",
-			Description: "Search for exact text in a file or directory and return 10 lines of context before and after each match. Submit all independent searches together in the same tool round.",
+			Description: "Search file contents for multiple regular expressions in one call and return 10 lines of context before and after each match. Use this to find symbols, function signatures, or code patterns. Put all independent patterns for the same path in one patterns array.",
 			Parameters: ObjectSchema(map[string]Schema{
-				"path":  pathProperty,
-				"query": StringSchema("Exact text to search for."),
-			}, "path", "query"),
+				"path":     pathProperty,
+				"patterns": ArraySchema(StringSchema("Regular expression for matching file contents."), "Regular expressions to search together."),
+			}, "path", "patterns"),
 			Execute: executeSearchText,
 		},
 		Tool{

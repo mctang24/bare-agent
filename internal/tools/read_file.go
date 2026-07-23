@@ -46,5 +46,9 @@ func (workspaceTools *WorkspaceTools) executeReadFile(ctx context.Context, root,
 	}
 	workspaceTools.readHashes[path] = sha256.Sum256([]byte(content))
 
-	return content, nil
+	lines := strings.Split(content, "\n")
+	for index := range lines {
+		lines[index] = fmt.Sprintf("%4d | %s", index+1, lines[index])
+	}
+	return strings.Join(lines, "\n"), nil
 }

@@ -22,8 +22,8 @@ func TestAgentExecuteTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executeTool() error = %v", err)
 	}
-	if result != "hello" {
-		t.Errorf("executeTool() = %q, want hello", result)
+	if result != "   1 | hello" {
+		t.Errorf("executeTool() = %q, want numbered content", result)
 	}
 }
 

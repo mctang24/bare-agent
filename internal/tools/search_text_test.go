@@ -18,7 +18,7 @@ func TestSearchText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := searchText(context.Background(), root, ".", "find me")
+	got, err := searchText(context.Background(), root, ".", []string{`find\s+me`})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,17 +30,18 @@ func TestSearchText(t *testing.T) {
 		name      string
 		ctx       context.Context
 		requested string
-		query     string
+		pattern   string
 		wantErr   bool
 	}{
-		{name: "没有匹配", ctx: context.Background(), requested: ".", query: "missing"},
-		{name: "查询为空", ctx: context.Background(), requested: ".", wantErr: true},
-		{name: "拒绝越界路径", ctx: context.Background(), requested: "..", query: "find", wantErr: true},
+		{name: "没有匹配", ctx: context.Background(), requested: ".", pattern: "missing"},
+		{name: "正则为空", ctx: context.Background(), requested: ".", wantErr: true},
+		{name: "正则无效", ctx: context.Background(), requested: ".", pattern: "[", wantErr: true},
+		{name: "拒绝越界路径", ctx: context.Background(), requested: "..", pattern: "find", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := searchText(tt.ctx, root, tt.requested, tt.query)
+			result, err := searchText(tt.ctx, root, tt.requested, []string{tt.pattern})
 			if tt.wantErr && err == nil {
 				t.Fatal("expected error")
 			}
@@ -66,7 +67,7 @@ func TestSearchTextMultipleFiles(t *testing.T) {
 		}
 	}
 
-	result, err := searchText(context.Background(), root, ".", "target")
+	result, err := searchText(context.Background(), root, ".", []string{"target"})
 	if err != nil {
 		t.Fatalf("searchText() error = %v", err)
 	}
@@ -91,7 +92,7 @@ func TestSearchTextIncludesContext(t *testing.T) {
 		t.Fatalf("write test file: %v", err)
 	}
 
-	result, err := searchText(context.Background(), root, ".", "target")
+	result, err := searchText(context.Background(), root, ".", []string{"target"})
 	if err != nil {
 		t.Fatalf("searchText() error = %v", err)
 	}
@@ -104,16 +105,18 @@ func TestSearchTextIncludesContext(t *testing.T) {
 
 func TestExecuteSearchText(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("find target\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("find target\nfind another\n"), 0o600); err != nil {
 		t.Fatalf("write test file: %v", err)
 	}
 
-	result, err := executeSearchText(context.Background(), root, `{"path":".","query":"target"}`)
+	result, err := executeSearchText(context.Background(), root, `{"path":".","patterns":["target","another"]}`)
 	if err != nil {
 		t.Fatalf("executeSearchText() error = %v", err)
 	}
-	if !strings.Contains(result, "file.txt:1:find target") {
-		t.Errorf("executeSearchText() = %q, want matching line", result)
+	for _, expected := range []string{"file.txt:1:find target", "file.txt:2:find another"} {
+		if !strings.Contains(result, expected) {
+			t.Errorf("executeSearchText() = %q, want %q", result, expected)
+		}
 	}
 }
 
@@ -126,10 +129,11 @@ func TestExecuteSearchTextErrors(t *testing.T) {
 		wantErr   string
 	}{
 		{name: "invalid JSON", ctx: context.Background(), arguments: `{`, wantErr: "decode arguments"},
-		{name: "empty path", ctx: context.Background(), arguments: `{"query":"target"}`, wantErr: "path is empty"},
-		{name: "empty query", ctx: context.Background(), arguments: `{"path":"."}`, wantErr: "query is empty"},
-		{name: "unknown field", ctx: context.Background(), arguments: `{"path":".","query":"target","extra":true}`, wantErr: `unknown field "extra"`},
-		{name: "path escape", ctx: context.Background(), arguments: `{"path":"..","query":"target"}`, wantErr: "escapes root"},
+		{name: "empty path", ctx: context.Background(), arguments: `{"patterns":["target"]}`, wantErr: "path is empty"},
+		{name: "empty patterns", ctx: context.Background(), arguments: `{"path":"."}`, wantErr: "patterns are empty"},
+		{name: "empty pattern", ctx: context.Background(), arguments: `{"path":".","patterns":[""]}`, wantErr: "pattern is empty"},
+		{name: "unknown field", ctx: context.Background(), arguments: `{"path":".","patterns":["target"],"extra":true}`, wantErr: `unknown field "extra"`},
+		{name: "path escape", ctx: context.Background(), arguments: `{"path":"..","patterns":["target"]}`, wantErr: "escapes root"},
 	}
 
 	for _, tt := range tests {

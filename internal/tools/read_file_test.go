@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -58,7 +60,7 @@ func TestReadFile(t *testing.T) {
 
 func TestExecuteReadFile(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("hello"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("hello\nagent\n"), 0o600); err != nil {
 		t.Fatalf("write test file: %v", err)
 	}
 
@@ -66,8 +68,55 @@ func TestExecuteReadFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executeReadFile() error = %v", err)
 	}
-	if result != "hello" {
-		t.Errorf("executeReadFile() = %q, want hello", result)
+	want := "   1 | hello\n   2 | agent\n   3 | "
+	if result != want {
+		t.Errorf("executeReadFile() = %q, want %q", result, want)
+	}
+}
+
+func TestExecuteReadEmptyFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "empty.txt"), nil, 0o600); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	result, err := NewWorkspaceTools().executeReadFile(context.Background(), root, `{"path":"empty.txt"}`)
+	if err != nil {
+		t.Fatalf("executeReadFile() error = %v", err)
+	}
+	if result != "   1 | " {
+		t.Errorf("executeReadFile() = %q, want one empty numbered line", result)
+	}
+}
+
+func TestExecuteReadFileLineNumbersMatchSource(t *testing.T) {
+	_, sourcePath, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate test source")
+	}
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read source file: %v", err)
+	}
+	result, err := NewWorkspaceTools().executeReadFile(
+		context.Background(),
+		filepath.Dir(sourcePath),
+		`{"path":"read_file_test.go"}`,
+	)
+	if err != nil {
+		t.Fatalf("executeReadFile() error = %v", err)
+	}
+
+	sourceLines := strings.Split(string(content), "\n")
+	resultLines := strings.Split(result, "\n")
+	if len(resultLines) != len(sourceLines) {
+		t.Fatalf("result line count = %d, want %d", len(resultLines), len(sourceLines))
+	}
+	for index := range sourceLines {
+		want := fmt.Sprintf("%4d | %s", index+1, sourceLines[index])
+		if resultLines[index] != want {
+			t.Fatalf("line %d = %q, want %q", index+1, resultLines[index], want)
+		}
 	}
 }
 

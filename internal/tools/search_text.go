@@ -10,10 +10,15 @@ import (
 	"strings"
 )
 
-// searchText searches an existing path inside root for exact text.
-func searchText(_ context.Context, root, requested, query string) (string, error) {
-	if query == "" {
-		return "", fmt.Errorf("search query is empty")
+// searchText searches an existing path inside root with regular expressions.
+func searchText(_ context.Context, root, requested string, patterns []string) (string, error) {
+	if len(patterns) == 0 {
+		return "", fmt.Errorf("search patterns are empty")
+	}
+	for _, pattern := range patterns {
+		if pattern == "" {
+			return "", fmt.Errorf("search pattern is empty")
+		}
 	}
 
 	safeRoot, err := resolveExistingPath(root, ".")
@@ -29,7 +34,12 @@ func searchText(_ context.Context, root, requested, query string) (string, error
 		return "", fmt.Errorf("make search path relative: %w", err)
 	}
 
-	command := exec.Command("rg", "--line-number", "--with-filename", "--no-heading", "--color=never", "--fixed-strings", "--context=10", "--", query, target)
+	args := []string{"--line-number", "--with-filename", "--no-heading", "--color=never", "--context=10"}
+	for _, pattern := range patterns {
+		args = append(args, "-e", pattern)
+	}
+	args = append(args, "--", target)
+	command := exec.Command("rg", args...)
 	command.Dir = safeRoot
 	output, err := command.Output()
 	if err == nil {
@@ -44,8 +54,8 @@ func searchText(_ context.Context, root, requested, query string) (string, error
 }
 
 type searchTextArguments struct {
-	Path  string `json:"path"`
-	Query string `json:"query"`
+	Path     string   `json:"path"`
+	Patterns []string `json:"patterns"`
 }
 
 // executeSearchText runs searchText from JSON tool arguments.
@@ -59,11 +69,11 @@ func executeSearchText(ctx context.Context, root, arguments string) (string, err
 	if input.Path == "" {
 		return "", fmt.Errorf("execute search_text: path is empty")
 	}
-	if input.Query == "" {
-		return "", fmt.Errorf("execute search_text: query is empty")
+	if len(input.Patterns) == 0 {
+		return "", fmt.Errorf("execute search_text: patterns are empty")
 	}
 
-	result, err := searchText(ctx, root, input.Path, input.Query)
+	result, err := searchText(ctx, root, input.Path, input.Patterns)
 	if err != nil {
 		return "", fmt.Errorf("execute search_text: %w", err)
 	}
