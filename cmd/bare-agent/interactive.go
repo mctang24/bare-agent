@@ -5,6 +5,7 @@ import (
 	"bare-agent/internal/tools"
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -22,6 +23,7 @@ func runTask(ctx context.Context, runner *agent.Agent, task string, output io.Wr
 func runInteractive(ctx context.Context, runner *agent.Agent, input io.Reader, output, errorOutput io.Writer) error {
 	scanner := bufio.NewScanner(input)
 	runner.SetWriteApprover(newScannerWriteApprover(scanner, output))
+	runner.SetCommandApprover(newScannerCommandApprover(scanner, output))
 	for {
 		fmt.Fprint(output, "> ")
 		if !scanner.Scan() {
@@ -50,19 +52,33 @@ func runInteractive(ctx context.Context, runner *agent.Agent, input io.Reader, o
 	}
 }
 
+func newScannerCommandApprover(scanner *bufio.Scanner, output io.Writer) tools.CommandApprover {
+	return func(_ context.Context, request tools.CommandRequest) (bool, error) {
+		command, err := json.Marshal(append([]string{request.Command}, request.Args...))
+		if err != nil {
+			return false, fmt.Errorf("format command approval: %w", err)
+		}
+		return scanApproval(scanner, output, fmt.Sprintf("允许 run_command 执行 %s？[Y/n] ", command))
+	}
+}
+
 func newScannerWriteApprover(scanner *bufio.Scanner, output io.Writer) tools.WriteApprover {
 	return func(_ context.Context, request tools.WriteRequest) (bool, error) {
-		for {
-			fmt.Fprintf(output, "允许 %s 写入 %q？[Y/n] ", request.Tool, request.Path)
-			if !scanner.Scan() {
-				return false, scanner.Err()
-			}
-			switch strings.TrimSpace(strings.ToLower(scanner.Text())) {
-			case "", "y", "yes":
-				return true, nil
-			case "n", "no":
-				return false, nil
-			}
+		return scanApproval(scanner, output, fmt.Sprintf("允许 %s 写入 %q？[Y/n] ", request.Tool, request.Path))
+	}
+}
+
+func scanApproval(scanner *bufio.Scanner, output io.Writer, prompt string) (bool, error) {
+	for {
+		fmt.Fprint(output, prompt)
+		if !scanner.Scan() {
+			return false, scanner.Err()
+		}
+		switch strings.TrimSpace(strings.ToLower(scanner.Text())) {
+		case "", "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
 		}
 	}
 }

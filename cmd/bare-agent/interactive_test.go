@@ -160,3 +160,41 @@ func TestScannerWriteApproverEscapesPath(t *testing.T) {
 		t.Fatalf("output = %q", output.String())
 	}
 }
+
+func TestScannerCommandApprover(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		approved bool
+	}{
+		{name: "enter approves", input: "\n", approved: true},
+		{name: "yes approves", input: "yes\n", approved: true},
+		{name: "no denies", input: "no\n", approved: false},
+		{name: "invalid answer retries", input: "maybe\nn\n", approved: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output strings.Builder
+			approve := newScannerCommandApprover(bufio.NewScanner(strings.NewReader(tt.input)), &output)
+			approved, err := approve(context.Background(), tools.CommandRequest{Command: "go", Args: []string{"test", "./..."}})
+			if err != nil || approved != tt.approved {
+				t.Fatalf("approved = %v, error = %v", approved, err)
+			}
+			if !strings.Contains(output.String(), `["go","test","./..."]`) || !strings.Contains(output.String(), "[Y/n]") {
+				t.Fatalf("output = %q", output.String())
+			}
+		})
+	}
+}
+
+func TestScannerCommandApproverEscapesArguments(t *testing.T) {
+	var output strings.Builder
+	approve := newScannerCommandApprover(bufio.NewScanner(strings.NewReader("n\n")), &output)
+	_, err := approve(context.Background(), tools.CommandRequest{Command: "go", Args: []string{"test\n允许其他命令"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "test\n允许") || !strings.Contains(output.String(), `test\n允许`) {
+		t.Fatalf("output = %q", output.String())
+	}
+}

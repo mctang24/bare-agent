@@ -48,7 +48,9 @@ func main() {
 		}
 		return
 	}
-	runner.SetWriteApprover(newScannerWriteApprover(bufio.NewScanner(os.Stdin), os.Stdout))
+	scanner := bufio.NewScanner(os.Stdin)
+	runner.SetWriteApprover(newScannerWriteApprover(scanner, os.Stdout))
+	runner.SetCommandApprover(newScannerCommandApprover(scanner, os.Stdout))
 	if err := runTask(context.Background(), runner, config.task, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -1,6 +1,7 @@
 package deepseek
 
 import (
+	"bare-agent/internal/tools"
 	"bufio"
 	"bytes"
 	"context"
@@ -20,9 +21,9 @@ type message struct {
 }
 
 type functionDefinition struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters,omitempty"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Parameters  tools.Schema `json:"parameters"`
 }
 
 type toolDefinition struct {

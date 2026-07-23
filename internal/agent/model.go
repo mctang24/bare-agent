@@ -55,7 +55,7 @@ type ToolResult struct {
 type ToolDefinition struct {
 	Name        string
 	Description string
-	Parameters  map[string]any
+	Parameters  tools.Schema
 }
 
 // modelTools returns the tool descriptions sent to the model.

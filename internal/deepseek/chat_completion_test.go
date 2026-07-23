@@ -1,6 +1,7 @@
 package deepseek
 
 import (
+	"bare-agent/internal/tools"
 	"context"
 	"io"
 	"net/http"
@@ -51,7 +52,7 @@ func TestCreateChatCompletion(t *testing.T) {
 			Function: functionDefinition{
 				Name:        "search_text",
 				Description: "search text",
-				Parameters:  map[string]any{"type": "object"},
+				Parameters:  tools.ObjectSchema(nil),
 			},
 		}},
 	})

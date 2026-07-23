@@ -8,12 +8,9 @@ import (
 )
 
 func TestModelTools(t *testing.T) {
-	parameters := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"path": map[string]any{"type": "string"},
-		},
-	}
+	parameters := tools.ObjectSchema(map[string]tools.Schema{
+		"path": tools.StringSchema(""),
+	}, "path")
 	available := []tools.Tool{
 		{
 			Name:        "read_file",

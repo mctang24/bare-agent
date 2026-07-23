@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bare-agent/internal/tools"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -18,9 +19,9 @@ type runTrace struct {
 }
 
 type traceToolDefinition struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters,omitempty"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Parameters  tools.Schema `json:"parameters"`
 }
 
 func reportTraceError(event string, err error) {

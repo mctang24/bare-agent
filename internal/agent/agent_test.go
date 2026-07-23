@@ -41,8 +41,8 @@ func TestNewAgent(t *testing.T) {
 	if created.model != model || created.instructions != "inspect" || created.maxTurns != defaultMaxTurns {
 		t.Fatalf("NewAgent() = %#v", created)
 	}
-	if len(created.tools) != 5 {
-		t.Fatalf("NewAgent() tool count = %d, want 5", len(created.tools))
+	if len(created.tools) != 6 {
+		t.Fatalf("NewAgent() tool count = %d, want 6", len(created.tools))
 	}
 
 	configured, err := NewAgent(t.TempDir(), model, "", 3)
@@ -218,7 +218,7 @@ func TestAgentRunTrace(t *testing.T) {
 		model:        model,
 		maxTurns:     2,
 		instructions: "inspect carefully",
-		tools: []tools.Tool{{Name: "fail", Description: "always fails", Parameters: map[string]any{"type": "object"}, Execute: func(context.Context, string, string) (string, error) {
+		tools: []tools.Tool{{Name: "fail", Description: "always fails", Parameters: tools.ObjectSchema(nil), Execute: func(context.Context, string, string) (string, error) {
 			return "", errors.New("tool failed")
 		}}},
 	}

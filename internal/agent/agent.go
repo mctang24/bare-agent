@@ -77,6 +77,12 @@ func (agent *Agent) SetWriteApprover(approver tools.WriteApprover) {
 	}
 }
 
+func (agent *Agent) SetCommandApprover(approver tools.CommandApprover) {
+	if agent.fileTools != nil {
+		agent.fileTools.SetCommandApprover(approver)
+	}
+}
+
 // Run continues the conversation until the model returns a final response.
 func (agent *Agent) Run(ctx context.Context, task string, onTextDelta TextDeltaHandler) (result RunResult, runErr error) {
 	if task == "" {

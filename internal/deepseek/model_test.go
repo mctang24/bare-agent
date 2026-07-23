@@ -2,6 +2,7 @@ package deepseek
 
 import (
 	"bare-agent/internal/agent"
+	"bare-agent/internal/tools"
 	"context"
 	"encoding/json"
 	"io"
@@ -48,7 +49,7 @@ func TestGenerateResponse(t *testing.T) {
 			{Role: "tool", ToolResults: []agent.ToolResult{{ToolCallID: "call_1", Content: "found"}}},
 		},
 		Tools: []agent.ToolDefinition{
-			{Name: "search_text", Description: "search text", Parameters: map[string]any{"type": "object"}},
+			{Name: "search_text", Description: "search text", Parameters: tools.ObjectSchema(nil)},
 			{Name: "no_args", Description: "no arguments"},
 		},
 	})
