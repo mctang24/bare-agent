@@ -12,6 +12,34 @@ import (
 	"testing"
 )
 
+func TestConvertMessages(t *testing.T) {
+	messages, err := convertMessages("inspect first", []agent.Message{
+		{Role: "user", Content: "find target"},
+		{Role: "assistant", ToolCalls: []agent.ToolCall{{
+			ID: "call_1", Name: "search_text", Arguments: `{"query":"target"}`,
+		}}},
+		{Role: "tool", ToolResults: []agent.ToolResult{
+			{ToolCallID: "call_1", Content: "first"},
+			{ToolCallID: "call_2", Content: "second"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("convertMessages() error = %v", err)
+	}
+	if len(messages) != 5 {
+		t.Fatalf("message count = %d, want 5", len(messages))
+	}
+	if messages[0].Role != "system" || messages[0].Content == nil || *messages[0].Content != "inspect first" {
+		t.Fatalf("system message = %#v", messages[0])
+	}
+	if len(messages[2].ToolCalls) != 1 || messages[2].ToolCalls[0].Function.Name != "search_text" {
+		t.Fatalf("assistant message = %#v", messages[2])
+	}
+	if messages[3].ToolCallID != "call_1" || messages[4].ToolCallID != "call_2" {
+		t.Fatalf("tool messages = %#v", messages[3:])
+	}
+}
+
 func TestGenerateResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

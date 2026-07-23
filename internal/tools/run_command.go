@@ -74,7 +74,7 @@ func (output *commandOutput) String() string {
 	return string(output.head[:headLength]) + marker + string(output.tail[len(output.tail)-tailLength:])
 }
 
-func (fileTools *FileTools) executeRunCommand(ctx context.Context, root, arguments string) (string, error) {
+func (workspaceTools *WorkspaceTools) executeRunCommand(ctx context.Context, root, arguments string) (string, error) {
 	var input runCommandInput
 	if err := decodeArguments(arguments, &input); err != nil {
 		return "", fmt.Errorf("execute run_command: decode arguments: %w", err)
@@ -85,10 +85,10 @@ func (fileTools *FileTools) executeRunCommand(ctx context.Context, root, argumen
 	if input.Args == nil {
 		return "", fmt.Errorf("execute run_command: args is required")
 	}
-	if fileTools.commandApprover == nil {
+	if workspaceTools.commandApprover == nil {
 		return "", fmt.Errorf("execute run_command: command approval is not configured")
 	}
-	approved, err := fileTools.commandApprover(ctx, CommandRequest{Command: input.Command, Args: input.Args})
+	approved, err := workspaceTools.commandApprover(ctx, CommandRequest{Command: input.Command, Args: input.Args})
 	if err != nil {
 		return "", fmt.Errorf("execute run_command: request approval: %w", err)
 	}
@@ -96,7 +96,7 @@ func (fileTools *FileTools) executeRunCommand(ctx context.Context, root, argumen
 		return "", fmt.Errorf("execute run_command: user denied command")
 	}
 
-	commandCtx, cancel := context.WithTimeout(ctx, fileTools.commandTimeout)
+	commandCtx, cancel := context.WithTimeout(ctx, workspaceTools.commandTimeout)
 	defer cancel()
 	command := exec.CommandContext(commandCtx, input.Command, input.Args...)
 	command.Dir = root
@@ -106,7 +106,7 @@ func (fileTools *FileTools) executeRunCommand(ctx context.Context, root, argumen
 	err = command.Run()
 	if commandCtx.Err() != nil {
 		if errors.Is(commandCtx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("execute run_command: command timed out after %s", fileTools.commandTimeout)
+			return "", fmt.Errorf("execute run_command: command timed out after %s", workspaceTools.commandTimeout)
 		}
 		return "", fmt.Errorf("execute run_command: command cancelled: %w", commandCtx.Err())
 	}

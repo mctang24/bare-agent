@@ -13,14 +13,14 @@ import (
 
 func TestRunCommand(t *testing.T) {
 	root := t.TempDir()
-	fileTools := NewFileTools()
-	fileTools.SetCommandApprover(func(_ context.Context, request CommandRequest) (bool, error) {
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.SetCommandApprover(func(_ context.Context, request CommandRequest) (bool, error) {
 		if request.Command != os.Args[0] || len(request.Args) == 0 {
 			t.Fatalf("approval request = %#v", request)
 		}
 		return true, nil
 	})
-	run := findTool(t, fileTools, "run_command")
+	run := findTool(t, workspaceTools, "run_command")
 
 	output, err := run.Execute(context.Background(), root, helperCommandArguments("output"))
 	if err != nil {
@@ -37,9 +37,9 @@ func TestRunCommand(t *testing.T) {
 
 func TestRunCommandUsesRootAsWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
-	fileTools := NewFileTools()
-	fileTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
-	run := findTool(t, fileTools, "run_command")
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
+	run := findTool(t, workspaceTools, "run_command")
 
 	output, err := run.Execute(context.Background(), root, helperCommandArguments("working_directory"))
 	if err != nil {
@@ -55,9 +55,9 @@ func TestRunCommandUsesRootAsWorkingDirectory(t *testing.T) {
 }
 
 func TestRunCommandReturnsNonzeroExit(t *testing.T) {
-	fileTools := NewFileTools()
-	fileTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
-	run := findTool(t, fileTools, "run_command")
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
+	run := findTool(t, workspaceTools, "run_command")
 
 	output, err := run.Execute(context.Background(), t.TempDir(), helperCommandArguments("exit"))
 	if err != nil {
@@ -73,9 +73,9 @@ func TestRunCommandReturnsNonzeroExit(t *testing.T) {
 }
 
 func TestRunCommandTruncatesOutput(t *testing.T) {
-	fileTools := NewFileTools()
-	fileTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
-	run := findTool(t, fileTools, "run_command")
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
+	run := findTool(t, workspaceTools, "run_command")
 
 	output, err := run.Execute(context.Background(), t.TempDir(), helperCommandArguments("large_output"))
 	if err != nil {
@@ -95,24 +95,24 @@ func TestRunCommandTruncatesOutput(t *testing.T) {
 }
 
 func TestRunCommandApproval(t *testing.T) {
-	runWithoutApprover := findTool(t, NewFileTools(), "run_command")
+	runWithoutApprover := findTool(t, NewWorkspaceTools(), "run_command")
 	if _, err := runWithoutApprover.Execute(context.Background(), t.TempDir(), helperCommandArguments("output")); err == nil || !strings.Contains(err.Error(), "approval is not configured") {
 		t.Fatalf("missing approval error = %v", err)
 	}
 
-	fileTools := NewFileTools()
-	fileTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return false, nil })
-	run := findTool(t, fileTools, "run_command")
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return false, nil })
+	run := findTool(t, workspaceTools, "run_command")
 	if _, err := run.Execute(context.Background(), t.TempDir(), helperCommandArguments("output")); err == nil || !strings.Contains(err.Error(), "user denied") {
 		t.Fatalf("denied error = %v", err)
 	}
 }
 
 func TestRunCommandTimeout(t *testing.T) {
-	fileTools := NewFileTools()
-	fileTools.commandTimeout = 20 * time.Millisecond
-	fileTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
-	run := findTool(t, fileTools, "run_command")
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.commandTimeout = 20 * time.Millisecond
+	workspaceTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) { return true, nil })
+	run := findTool(t, workspaceTools, "run_command")
 
 	_, err := run.Execute(context.Background(), t.TempDir(), helperCommandArguments("sleep"))
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
@@ -121,12 +121,12 @@ func TestRunCommandTimeout(t *testing.T) {
 }
 
 func TestRunCommandValidatesArguments(t *testing.T) {
-	fileTools := NewFileTools()
-	fileTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) {
+	workspaceTools := NewWorkspaceTools()
+	workspaceTools.SetCommandApprover(func(context.Context, CommandRequest) (bool, error) {
 		t.Fatal("approver called for invalid arguments")
 		return false, nil
 	})
-	run := findTool(t, fileTools, "run_command")
+	run := findTool(t, workspaceTools, "run_command")
 	tests := []struct {
 		arguments string
 		want      string

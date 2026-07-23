@@ -29,7 +29,7 @@ type readFileArguments struct {
 }
 
 // executeReadFile runs readFile from JSON tool arguments.
-func (fileTools *FileTools) executeReadFile(ctx context.Context, root, arguments string) (string, error) {
+func (workspaceTools *WorkspaceTools) executeReadFile(ctx context.Context, root, arguments string) (string, error) {
 	var input readFileArguments
 	decoder := json.NewDecoder(strings.NewReader(arguments))
 	decoder.DisallowUnknownFields()
@@ -44,7 +44,7 @@ func (fileTools *FileTools) executeReadFile(ctx context.Context, root, arguments
 	if err != nil {
 		return "", fmt.Errorf("execute read_file: %w", err)
 	}
-	fileTools.readHashes[path] = sha256.Sum256([]byte(content))
+	workspaceTools.readHashes[path] = sha256.Sum256([]byte(content))
 
 	return content, nil
 }

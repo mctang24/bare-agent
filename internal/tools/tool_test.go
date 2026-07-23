@@ -7,7 +7,7 @@ import (
 )
 
 func TestFileToolDefinitions(t *testing.T) {
-	registered := NewFileTools().Definitions()
+	registered := NewWorkspaceTools().Definitions()
 	if len(registered) != 6 {
 		t.Fatalf("Tools() length = %d, want 6", len(registered))
 	}

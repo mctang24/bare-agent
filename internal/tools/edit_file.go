@@ -14,7 +14,7 @@ type editFileArguments struct {
 	NewString string `json:"new_string"`
 }
 
-func (fileTools *FileTools) executeEditFile(ctx context.Context, root, arguments string) (string, error) {
+func (workspaceTools *WorkspaceTools) executeEditFile(ctx context.Context, root, arguments string) (string, error) {
 	var input editFileArguments
 	if err := decodeArguments(arguments, &input); err != nil {
 		return "", fmt.Errorf("execute edit_file: decode arguments: %w", err)
@@ -29,7 +29,7 @@ func (fileTools *FileTools) executeEditFile(ctx context.Context, root, arguments
 		return "", fmt.Errorf("execute edit_file: new_string is not valid UTF-8")
 	}
 
-	path, content, mode, err := fileTools.loadUnchangedFile(root, input.Path)
+	path, content, mode, err := workspaceTools.loadUnchangedFile(root, input.Path)
 	if err != nil {
 		return "", fmt.Errorf("execute edit_file: %w", err)
 	}
@@ -41,10 +41,10 @@ func (fileTools *FileTools) executeEditFile(ctx context.Context, root, arguments
 	if updated == string(content) {
 		return "", fmt.Errorf("execute edit_file: replacement does not change the file")
 	}
-	if err := fileTools.requireWriteApproval(ctx, "edit_file", input.Path); err != nil {
+	if err := workspaceTools.requireWriteApproval(ctx, "edit_file", input.Path); err != nil {
 		return "", fmt.Errorf("execute edit_file: %w", err)
 	}
-	path, content, mode, err = fileTools.loadUnchangedFile(root, input.Path)
+	path, content, mode, err = workspaceTools.loadUnchangedFile(root, input.Path)
 	if err != nil {
 		return "", fmt.Errorf("execute edit_file: %w", err)
 	}
@@ -52,6 +52,6 @@ func (fileTools *FileTools) executeEditFile(ctx context.Context, root, arguments
 	if err := writeFileAtomically(path, []byte(updated), mode); err != nil {
 		return "", fmt.Errorf("execute edit_file: write %q: %w", input.Path, err)
 	}
-	fileTools.readHashes[path] = sha256.Sum256([]byte(updated))
+	workspaceTools.readHashes[path] = sha256.Sum256([]byte(updated))
 	return fmt.Sprintf("Edited %s: replaced 1 occurrence", input.Path), nil
 }

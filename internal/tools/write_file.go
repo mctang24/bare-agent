@@ -14,7 +14,7 @@ type writeFileArguments struct {
 	Content string `json:"content"`
 }
 
-func (fileTools *FileTools) executeWriteFile(ctx context.Context, root, arguments string) (string, error) {
+func (workspaceTools *WorkspaceTools) executeWriteFile(ctx context.Context, root, arguments string) (string, error) {
 	var input writeFileArguments
 	if err := decodeArguments(arguments, &input); err != nil {
 		return "", fmt.Errorf("execute write_file: decode arguments: %w", err)
@@ -35,7 +35,7 @@ func (fileTools *FileTools) executeWriteFile(ctx context.Context, root, argument
 	created := true
 	if _, err := os.Stat(path); err == nil {
 		var current []byte
-		path, current, mode, err = fileTools.loadUnchangedFile(root, input.Path)
+		path, current, mode, err = workspaceTools.loadUnchangedFile(root, input.Path)
 		if err != nil {
 			return "", fmt.Errorf("execute write_file: %w", err)
 		}
@@ -46,7 +46,7 @@ func (fileTools *FileTools) executeWriteFile(ctx context.Context, root, argument
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("execute write_file: stat %q: %w", input.Path, err)
 	}
-	if err := fileTools.requireWriteApproval(ctx, "write_file", input.Path); err != nil {
+	if err := workspaceTools.requireWriteApproval(ctx, "write_file", input.Path); err != nil {
 		return "", fmt.Errorf("execute write_file: %w", err)
 	}
 	if created {
@@ -60,7 +60,7 @@ func (fileTools *FileTools) executeWriteFile(ctx context.Context, root, argument
 			return "", fmt.Errorf("execute write_file: inspect %q before writing: %w", input.Path, err)
 		}
 	} else {
-		path, _, mode, err = fileTools.loadUnchangedFile(root, input.Path)
+		path, _, mode, err = workspaceTools.loadUnchangedFile(root, input.Path)
 		if err != nil {
 			return "", fmt.Errorf("execute write_file: %w", err)
 		}
@@ -72,7 +72,7 @@ func (fileTools *FileTools) executeWriteFile(ctx context.Context, root, argument
 	if err := writeFileAtomically(path, []byte(input.Content), mode); err != nil {
 		return "", fmt.Errorf("execute write_file: write %q: %w", input.Path, err)
 	}
-	fileTools.readHashes[path] = sha256.Sum256([]byte(input.Content))
+	workspaceTools.readHashes[path] = sha256.Sum256([]byte(input.Content))
 	action := "Updated"
 	if created {
 		action = "Created"

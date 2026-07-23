@@ -12,15 +12,15 @@ import (
 const defaultMaxTurns = 20
 
 type Agent struct {
-	root         string
-	tools        []tools.Tool
-	model        Model
-	instructions string
-	maxTurns     int
-	messages     []Message
-	traceWriter  *trace.Writer
-	sessionID    string
-	fileTools    *tools.FileTools
+	root           string
+	tools          []tools.Tool
+	model          Model
+	instructions   string
+	maxTurns       int
+	messages       []Message
+	traceWriter    *trace.Writer
+	sessionID      string
+	workspaceTools *tools.WorkspaceTools
 }
 
 // EnableTrace enables JSONL tracing for the agent session.
@@ -60,26 +60,26 @@ func NewAgent(root string, model Model, instructions string, maxTurns ...int) (*
 		turns = maxTurns[0]
 	}
 
-	fileTools := tools.NewFileTools()
+	workspaceTools := tools.NewWorkspaceTools()
 	return &Agent{
-		root:         root,
-		tools:        fileTools.Definitions(),
-		model:        model,
-		instructions: instructions,
-		maxTurns:     turns,
-		fileTools:    fileTools,
+		root:           root,
+		tools:          workspaceTools.Definitions(),
+		model:          model,
+		instructions:   instructions,
+		maxTurns:       turns,
+		workspaceTools: workspaceTools,
 	}, nil
 }
 
 func (agent *Agent) SetWriteApprover(approver tools.WriteApprover) {
-	if agent.fileTools != nil {
-		agent.fileTools.SetWriteApprover(approver)
+	if agent.workspaceTools != nil {
+		agent.workspaceTools.SetWriteApprover(approver)
 	}
 }
 
 func (agent *Agent) SetCommandApprover(approver tools.CommandApprover) {
-	if agent.fileTools != nil {
-		agent.fileTools.SetCommandApprover(approver)
+	if agent.workspaceTools != nil {
+		agent.workspaceTools.SetCommandApprover(approver)
 	}
 }
 
@@ -251,8 +251,8 @@ func (agent *Agent) Reset() error {
 		}
 	}
 	agent.messages = nil
-	if agent.fileTools != nil {
-		agent.fileTools.ResetReadState()
+	if agent.workspaceTools != nil {
+		agent.workspaceTools.ResetReadState()
 	}
 	return nil
 }

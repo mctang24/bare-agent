@@ -14,9 +14,9 @@ func TestEditFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package main\n\nvar value = 1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fileTools := newApprovedFileTools()
-	read := findTool(t, fileTools, "read_file")
-	edit := findTool(t, fileTools, "edit_file")
+	workspaceTools := newApprovedWorkspaceTools()
+	read := findTool(t, workspaceTools, "read_file")
+	edit := findTool(t, workspaceTools, "edit_file")
 	if _, err := read.Execute(context.Background(), root, `{"path":"main.go"}`); err != nil {
 		t.Fatalf("read_file error = %v", err)
 	}
@@ -46,9 +46,9 @@ func TestEditFileRejectsUnsafeChanges(t *testing.T) {
 	if err := os.WriteFile(path, []byte("same\nsame\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fileTools := newApprovedFileTools()
-	read := findTool(t, fileTools, "read_file")
-	edit := findTool(t, fileTools, "edit_file")
+	workspaceTools := newApprovedWorkspaceTools()
+	read := findTool(t, workspaceTools, "read_file")
+	edit := findTool(t, workspaceTools, "edit_file")
 
 	tests := []struct {
 		name      string
@@ -66,7 +66,7 @@ func TestEditFileRejectsUnsafeChanges(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileTools.ResetReadState()
+			workspaceTools.ResetReadState()
 			if err := os.WriteFile(path, []byte("same\nsame\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}

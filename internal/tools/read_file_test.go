@@ -62,7 +62,7 @@ func TestExecuteReadFile(t *testing.T) {
 		t.Fatalf("write test file: %v", err)
 	}
 
-	result, err := NewFileTools().executeReadFile(context.Background(), root, `{"path":"file.txt"}`)
+	result, err := NewWorkspaceTools().executeReadFile(context.Background(), root, `{"path":"file.txt"}`)
 	if err != nil {
 		t.Fatalf("executeReadFile() error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestExecuteReadFileErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewFileTools().executeReadFile(tt.ctx, root, tt.arguments)
+			_, err := NewWorkspaceTools().executeReadFile(tt.ctx, root, tt.arguments)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("executeReadFile() error = %v, want to contain %q", err, tt.wantErr)
 			}

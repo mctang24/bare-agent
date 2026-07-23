@@ -25,33 +25,33 @@ type CommandRequest struct {
 
 type CommandApprover func(context.Context, CommandRequest) (bool, error)
 
-type FileTools struct {
+type WorkspaceTools struct {
 	readHashes      map[string][sha256.Size]byte
 	writeApprover   WriteApprover
 	commandApprover CommandApprover
 	commandTimeout  time.Duration
 }
 
-func NewFileTools() *FileTools {
-	return &FileTools{
+func NewWorkspaceTools() *WorkspaceTools {
+	return &WorkspaceTools{
 		readHashes:     make(map[string][sha256.Size]byte),
 		commandTimeout: defaultCommandTimeout,
 	}
 }
 
-func (fileTools *FileTools) SetWriteApprover(approver WriteApprover) {
-	fileTools.writeApprover = approver
+func (workspaceTools *WorkspaceTools) SetWriteApprover(approver WriteApprover) {
+	workspaceTools.writeApprover = approver
 }
 
-func (fileTools *FileTools) SetCommandApprover(approver CommandApprover) {
-	fileTools.commandApprover = approver
+func (workspaceTools *WorkspaceTools) SetCommandApprover(approver CommandApprover) {
+	workspaceTools.commandApprover = approver
 }
 
-func (fileTools *FileTools) ResetReadState() {
-	clear(fileTools.readHashes)
+func (workspaceTools *WorkspaceTools) ResetReadState() {
+	clear(workspaceTools.readHashes)
 }
 
-func (fileTools *FileTools) Definitions() []Tool {
+func (workspaceTools *WorkspaceTools) Definitions() []Tool {
 	pathProperty := StringSchema("Path must be relative to the agent working directory. Use \".\" for the root. Do not use absolute paths.")
 	return []Tool{
 		{
@@ -64,7 +64,7 @@ func (fileTools *FileTools) Definitions() []Tool {
 			Name:        "read_file",
 			Description: "Read the complete contents of a file. When multiple independent files are known, call read_file for all of them in the same tool round. Only the path parameter is supported; line ranges, offsets, and partial reads are not supported.",
 			Parameters:  ObjectSchema(map[string]Schema{"path": pathProperty}, "path"),
-			Execute:     fileTools.executeReadFile,
+			Execute:     workspaceTools.executeReadFile,
 		},
 		{
 			Name:        "search_text",
@@ -83,7 +83,7 @@ func (fileTools *FileTools) Definitions() []Tool {
 				"old_string": StringSchema("Exact text to replace; it must occur once."),
 				"new_string": StringSchema("Replacement text."),
 			}, "path", "old_string", "new_string"),
-			Execute: fileTools.executeEditFile,
+			Execute: workspaceTools.executeEditFile,
 		},
 		Tool{
 			Name:        "write_file",
@@ -92,7 +92,7 @@ func (fileTools *FileTools) Definitions() []Tool {
 				"path":    pathProperty,
 				"content": StringSchema("Complete file content."),
 			}, "path", "content"),
-			Execute: fileTools.executeWriteFile,
+			Execute: workspaceTools.executeWriteFile,
 		},
 		{
 			Name:        "run_command",
@@ -101,17 +101,17 @@ func (fileTools *FileTools) Definitions() []Tool {
 				"command": StringSchema("Executable name or path."),
 				"args":    ArraySchema(StringSchema(""), "Arguments passed directly to the executable."),
 			}, "command", "args"),
-			Execute: fileTools.executeRunCommand,
+			Execute: workspaceTools.executeRunCommand,
 		},
 	}
 }
 
-func (fileTools *FileTools) loadUnchangedFile(root, requested string) (string, []byte, os.FileMode, error) {
+func (workspaceTools *WorkspaceTools) loadUnchangedFile(root, requested string) (string, []byte, os.FileMode, error) {
 	path, err := resolveExistingPath(root, requested)
 	if err != nil {
 		return "", nil, 0, err
 	}
-	expected, ok := fileTools.readHashes[path]
+	expected, ok := workspaceTools.readHashes[path]
 	if !ok {
 		return "", nil, 0, fmt.Errorf("%q must be read before writing", requested)
 	}
@@ -135,11 +135,11 @@ func (fileTools *FileTools) loadUnchangedFile(root, requested string) (string, [
 	return path, content, info.Mode().Perm(), nil
 }
 
-func (fileTools *FileTools) requireWriteApproval(ctx context.Context, tool, path string) error {
-	if fileTools.writeApprover == nil {
+func (workspaceTools *WorkspaceTools) requireWriteApproval(ctx context.Context, tool, path string) error {
+	if workspaceTools.writeApprover == nil {
 		return fmt.Errorf("write approval is not configured")
 	}
-	approved, err := fileTools.writeApprover(ctx, WriteRequest{Tool: tool, Path: path})
+	approved, err := workspaceTools.writeApprover(ctx, WriteRequest{Tool: tool, Path: path})
 	if err != nil {
 		return fmt.Errorf("request approval: %w", err)
 	}

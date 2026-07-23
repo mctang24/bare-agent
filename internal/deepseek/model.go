@@ -9,12 +9,37 @@ import (
 
 // GenerateResponse generates a response with DeepSeek.
 func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agent.ModelRequest) (agent.ModelStream, error) {
-	messages := make([]message, 0, len(request.Messages)+1)
-	if request.Instructions != "" {
-		messages = append(messages, message{Role: "system", Content: &request.Instructions})
+	messages, err := convertMessages(request.Instructions, request.Messages)
+	if err != nil {
+		return nil, err
 	}
 
-	for index, input := range request.Messages {
+	definitions := make([]toolDefinition, 0, len(request.Tools))
+	for _, tool := range request.Tools {
+		definitions = append(definitions, toolDefinition{
+			Type: "function",
+			Function: functionDefinition{
+				Name:        tool.Name,
+				Description: tool.Description,
+				Parameters:  tool.Parameters,
+			},
+		})
+	}
+
+	stream, err := client.createChatCompletion(ctx, chatCompletionRequest{Messages: messages, Tools: definitions})
+	if err != nil {
+		return nil, err
+	}
+	return &modelStream{stream: stream}, nil
+}
+
+func convertMessages(instructions string, inputs []agent.Message) ([]message, error) {
+	messages := make([]message, 0, len(inputs)+1)
+	if instructions != "" {
+		messages = append(messages, message{Role: "system", Content: &instructions})
+	}
+
+	for index, input := range inputs {
 		// RawMessage 存在时以其为准，忽略只读的 Content 和 ToolCalls；手动构造 assistant 消息时不设置 RawMessage。
 		if len(input.RawMessage) > 0 {
 			if input.Role != "" && input.Role != "assistant" {
@@ -72,24 +97,7 @@ func (client *DeepSeekClient) GenerateResponse(ctx context.Context, request agen
 			return nil, fmt.Errorf("DeepSeek message %d has unsupported role %q", index, input.Role)
 		}
 	}
-
-	definitions := make([]toolDefinition, 0, len(request.Tools))
-	for _, tool := range request.Tools {
-		definitions = append(definitions, toolDefinition{
-			Type: "function",
-			Function: functionDefinition{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  tool.Parameters,
-			},
-		})
-	}
-
-	stream, err := client.createChatCompletion(ctx, chatCompletionRequest{Messages: messages, Tools: definitions})
-	if err != nil {
-		return nil, err
-	}
-	return &modelStream{stream: stream}, nil
+	return messages, nil
 }
 
 type modelStream struct {

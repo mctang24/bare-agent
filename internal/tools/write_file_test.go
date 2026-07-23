@@ -10,9 +10,9 @@ import (
 
 func TestWriteFileCreatesAndUpdates(t *testing.T) {
 	root := t.TempDir()
-	fileTools := newApprovedFileTools()
-	write := findTool(t, fileTools, "write_file")
-	read := findTool(t, fileTools, "read_file")
+	workspaceTools := newApprovedWorkspaceTools()
+	write := findTool(t, workspaceTools, "write_file")
+	read := findTool(t, workspaceTools, "read_file")
 
 	if _, err := write.Execute(context.Background(), root, `{"path":"cmd/app/main.go","content":"package main\n"}`); err != nil {
 		t.Fatalf("create write_file error = %v", err)
@@ -31,16 +31,16 @@ func TestWriteFileCreatesAndUpdates(t *testing.T) {
 
 func TestWriteApprovalAndPathSafety(t *testing.T) {
 	root := t.TempDir()
-	fileTools := NewFileTools()
-	write := findTool(t, fileTools, "write_file")
+	workspaceTools := NewWorkspaceTools()
+	write := findTool(t, workspaceTools, "write_file")
 	if _, err := write.Execute(context.Background(), root, `{"path":"new.txt","content":"data"}`); err == nil || !strings.Contains(err.Error(), "approval is not configured") {
 		t.Fatalf("missing approval error = %v", err)
 	}
-	fileTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) { return false, nil })
+	workspaceTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) { return false, nil })
 	if _, err := write.Execute(context.Background(), root, `{"path":"new.txt","content":"data"}`); err == nil || !strings.Contains(err.Error(), "user denied") {
 		t.Fatalf("denied error = %v", err)
 	}
-	fileTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) { return true, nil })
+	workspaceTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) { return true, nil })
 	if _, err := write.Execute(context.Background(), root, `{"path":"../outside.txt","content":"data"}`); err == nil || !strings.Contains(err.Error(), "escapes root") {
 		t.Fatalf("path escape error = %v", err)
 	}
@@ -59,13 +59,13 @@ func TestWriteFileRechecksAfterApproval(t *testing.T) {
 	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fileTools := NewFileTools()
-	read := findTool(t, fileTools, "read_file")
-	write := findTool(t, fileTools, "write_file")
+	workspaceTools := NewWorkspaceTools()
+	read := findTool(t, workspaceTools, "read_file")
+	write := findTool(t, workspaceTools, "write_file")
 	if _, err := read.Execute(context.Background(), root, `{"path":"file.txt"}`); err != nil {
 		t.Fatal(err)
 	}
-	fileTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) {
+	workspaceTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) {
 		return true, os.WriteFile(path, []byte("external"), 0o600)
 	})
 	if _, err := write.Execute(context.Background(), root, `{"path":"file.txt","content":"agent"}`); err == nil || !strings.Contains(err.Error(), "changed since it was read") {
@@ -80,9 +80,9 @@ func TestWriteFileRechecksAfterApproval(t *testing.T) {
 func TestWriteFileRejectsParentSymlinkCreatedDuringApproval(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
-	fileTools := NewFileTools()
-	write := findTool(t, fileTools, "write_file")
-	fileTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) {
+	workspaceTools := NewWorkspaceTools()
+	write := findTool(t, workspaceTools, "write_file")
+	workspaceTools.SetWriteApprover(func(context.Context, WriteRequest) (bool, error) {
 		return true, os.Symlink(outside, filepath.Join(root, "new"))
 	})
 
