@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,28 @@ func TestSearchTextMultipleFiles(t *testing.T) {
 		"first.go:2:var target = 1",
 		"second.go:2:var target = 2",
 	} {
+		if !strings.Contains(result, expected) {
+			t.Errorf("searchText() result = %q, want to contain %q", result, expected)
+		}
+	}
+}
+
+func TestSearchTextIncludesContext(t *testing.T) {
+	root := t.TempDir()
+	lines := make([]string, 25)
+	for index := range lines {
+		lines[index] = fmt.Sprintf("line %d", index+1)
+	}
+	lines[12] = "target"
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	result, err := searchText(context.Background(), root, ".", "target")
+	if err != nil {
+		t.Fatalf("searchText() error = %v", err)
+	}
+	for _, expected := range []string{"file.txt-3-line 3", "file.txt:13:target", "file.txt-23-line 23"} {
 		if !strings.Contains(result, expected) {
 			t.Errorf("searchText() result = %q, want to contain %q", result, expected)
 		}

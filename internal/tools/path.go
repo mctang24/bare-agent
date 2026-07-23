@@ -12,14 +12,12 @@ func resolveExistingPath(root, requested string) (string, error) {
 	if requested == "" {
 		return "", fmt.Errorf("resolve path: requested path is empty")
 	}
-	if filepath.IsAbs(requested) {
-		return "", fmt.Errorf("resolve path %q: absolute paths are not allowed", requested)
-	}
 
 	rootPath, err := filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve root %q: %w", root, err)
 	}
+	rootInputPath := rootPath
 	rootPath, err = filepath.EvalSymlinks(rootPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve root %q: %w", root, err)
@@ -32,7 +30,26 @@ func resolveExistingPath(root, requested string) (string, error) {
 		return "", fmt.Errorf("resolve root %q: root is not a directory", rootPath)
 	}
 
-	resolvedPath, err := filepath.EvalSymlinks(filepath.Join(rootPath, requested))
+	requestedPath := requested
+	if filepath.IsAbs(requestedPath) {
+		pathFromRoot, inside, err := relativePathInside(rootInputPath, requestedPath)
+		if err != nil {
+			return "", fmt.Errorf("compare path %q with root %q: %w", requestedPath, rootInputPath, err)
+		}
+		if !inside {
+			pathFromRoot, inside, err = relativePathInside(rootPath, requestedPath)
+			if err != nil {
+				return "", fmt.Errorf("compare path %q with root %q: %w", requestedPath, rootPath, err)
+			}
+		}
+		if !inside {
+			return "", fmt.Errorf("resolve path %q: path escapes root", requested)
+		}
+		requestedPath = filepath.Join(rootPath, pathFromRoot)
+	} else {
+		requestedPath = filepath.Join(rootPath, requestedPath)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(requestedPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve path %q: %w", requested, err)
 	}
@@ -52,14 +69,12 @@ func resolveWritablePath(root, requested string) (string, error) {
 	if requested == "" {
 		return "", fmt.Errorf("resolve writable path: requested path is empty")
 	}
-	if filepath.IsAbs(requested) {
-		return "", fmt.Errorf("resolve writable path %q: absolute paths are not allowed", requested)
-	}
 
 	rootPath, err := filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve root %q: %w", root, err)
 	}
+	rootInputPath := rootPath
 	rootPath, err = filepath.EvalSymlinks(rootPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve root %q: %w", root, err)
@@ -71,7 +86,25 @@ func resolveWritablePath(root, requested string) (string, error) {
 	if !rootInfo.IsDir() {
 		return "", fmt.Errorf("resolve root %q: root is not a directory", rootPath)
 	}
-	targetPath := filepath.Join(rootPath, requested)
+	targetPath := requested
+	if filepath.IsAbs(targetPath) {
+		pathFromRoot, inside, err := relativePathInside(rootInputPath, targetPath)
+		if err != nil {
+			return "", fmt.Errorf("compare path %q with root %q: %w", targetPath, rootInputPath, err)
+		}
+		if !inside {
+			pathFromRoot, inside, err = relativePathInside(rootPath, targetPath)
+			if err != nil {
+				return "", fmt.Errorf("compare path %q with root %q: %w", targetPath, rootPath, err)
+			}
+		}
+		if !inside {
+			return "", fmt.Errorf("resolve writable path %q: path escapes root", requested)
+		}
+		targetPath = filepath.Join(rootPath, pathFromRoot)
+	} else {
+		targetPath = filepath.Join(rootPath, targetPath)
+	}
 	pathFromRoot, err := filepath.Rel(rootPath, targetPath)
 	if err != nil {
 		return "", fmt.Errorf("compare path %q with root %q: %w", targetPath, rootPath, err)
@@ -109,4 +142,13 @@ func resolveWritablePath(root, requested string) (string, error) {
 		return "", fmt.Errorf("resolve writable path %q: %w", requested, err)
 	}
 	return filepath.Join(resolvedExistingPath, missingPath), nil
+}
+
+func relativePathInside(root, target string) (string, bool, error) {
+	pathFromRoot, err := filepath.Rel(root, target)
+	if err != nil {
+		return "", false, err
+	}
+	inside := pathFromRoot != ".." && !strings.HasPrefix(pathFromRoot, ".."+string(filepath.Separator))
+	return pathFromRoot, inside, nil
 }

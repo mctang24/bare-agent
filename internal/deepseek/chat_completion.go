@@ -35,6 +35,10 @@ type chatCompletionRequest struct {
 	Tools    []toolDefinition
 }
 
+type thinkingConfig struct {
+	Type string `json:"type"`
+}
+
 func (client *DeepSeekClient) createChatCompletion(_ context.Context, input chatCompletionRequest) (*chatCompletionStream, error) {
 	if client.apiKey == "" {
 		return nil, fmt.Errorf("DeepSeek API key is empty")
@@ -47,11 +51,13 @@ func (client *DeepSeekClient) createChatCompletion(_ context.Context, input chat
 		Model    string           `json:"model"`
 		Messages []message        `json:"messages"`
 		Tools    []toolDefinition `json:"tools,omitempty"`
+		Thinking thinkingConfig   `json:"thinking"`
 		Stream   bool             `json:"stream"`
 	}{
 		Model:    client.model,
 		Messages: input.Messages,
 		Tools:    input.Tools,
+		Thinking: thinkingConfig{Type: "enabled"},
 		Stream:   true,
 	})
 	if err != nil {

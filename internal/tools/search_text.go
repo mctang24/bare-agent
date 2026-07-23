@@ -29,7 +29,7 @@ func searchText(_ context.Context, root, requested, query string) (string, error
 		return "", fmt.Errorf("make search path relative: %w", err)
 	}
 
-	command := exec.Command("rg", "--line-number", "--with-filename", "--no-heading", "--color=never", "--fixed-strings", "--", query, target)
+	command := exec.Command("rg", "--line-number", "--with-filename", "--no-heading", "--color=never", "--fixed-strings", "--context=10", "--", query, target)
 	command.Dir = safeRoot
 	output, err := command.Output()
 	if err == nil {

@@ -1,6 +1,9 @@
 package tools
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFileToolDefinitions(t *testing.T) {
 	registered := NewFileTools().Definitions()
@@ -21,6 +24,12 @@ func TestFileToolDefinitions(t *testing.T) {
 		wantNames[tool.Name] = true
 		if tool.Description == "" || tool.Parameters == nil || tool.Execute == nil {
 			t.Fatalf("tool %q has incomplete definition", tool.Name)
+		}
+		properties := tool.Parameters["properties"].(map[string]any)
+		path := properties["path"].(map[string]any)
+		description := path["description"].(string)
+		if !strings.Contains(description, `Use "." for the root`) || !strings.Contains(description, "Do not use absolute paths") {
+			t.Fatalf("tool %q path description does not require relative paths", tool.Name)
 		}
 	}
 }

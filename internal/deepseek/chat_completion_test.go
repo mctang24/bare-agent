@@ -27,7 +27,7 @@ func TestCreateChatCompletion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read request body: %v", err)
 		}
-		for _, expected := range []string{`"model":"deepseek-v4-flash"`, `"role":"user"`, `"content":"find target"`, `"name":"search_text"`, `"stream":true`} {
+		for _, expected := range []string{`"model":"deepseek-v4-flash"`, `"role":"user"`, `"content":"find target"`, `"name":"search_text"`, `"thinking":{"type":"enabled"}`, `"stream":true`} {
 			if !strings.Contains(string(body), expected) {
 				t.Errorf("body = %q, want to contain %q", body, expected)
 			}

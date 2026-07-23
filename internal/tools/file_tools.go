@@ -37,7 +37,7 @@ func (fileTools *FileTools) ResetReadState() {
 func (fileTools *FileTools) Definitions() []Tool {
 	pathProperty := map[string]any{
 		"type":        "string",
-		"description": "Path relative to the agent working directory.",
+		"description": "Path must be relative to the agent working directory. Use \".\" for the root. Do not use absolute paths.",
 	}
 	return []Tool{
 		{
@@ -55,7 +55,7 @@ func (fileTools *FileTools) Definitions() []Tool {
 		},
 		{
 			Name:        "read_file",
-			Description: "Read the contents of a file.",
+			Description: "Read the complete contents of a file. When multiple independent files are known, call read_file for all of them in the same tool round. Only the path parameter is supported; line ranges, offsets, and partial reads are not supported.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -68,7 +68,7 @@ func (fileTools *FileTools) Definitions() []Tool {
 		},
 		{
 			Name:        "search_text",
-			Description: "Search for exact text in a file or directory.",
+			Description: "Search for exact text in a file or directory and return 10 lines of context before and after each match. Submit all independent searches together in the same tool round.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

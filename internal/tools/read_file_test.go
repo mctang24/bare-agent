@@ -82,6 +82,7 @@ func TestExecuteReadFileErrors(t *testing.T) {
 		{name: "invalid JSON", ctx: context.Background(), arguments: `{`, wantErr: "decode arguments"},
 		{name: "empty path", ctx: context.Background(), arguments: `{}`, wantErr: "path is empty"},
 		{name: "unknown field", ctx: context.Background(), arguments: `{"path":"file.txt","extra":true}`, wantErr: `unknown field "extra"`},
+		{name: "unsupported range", ctx: context.Background(), arguments: `{"path":"file.txt","range":{"start":1,"end":2}}`, wantErr: `unknown field "range"`},
 		{name: "path escape", ctx: context.Background(), arguments: `{"path":".."}`, wantErr: "escapes root"},
 	}
 

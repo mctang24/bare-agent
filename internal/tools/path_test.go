@@ -38,8 +38,10 @@ func TestResolvePath(t *testing.T) {
 	}{
 		{name: "file inside root", requested: "inside.txt", want: resolvedInside},
 		{name: "root itself", requested: ".", want: resolvedRoot},
+		{name: "absolute file inside root", requested: inside, want: resolvedInside},
+		{name: "absolute root itself", requested: root, want: resolvedRoot},
 		{name: "empty path", requested: "", wantErr: true},
-		{name: "absolute path", requested: outside, wantErr: true},
+		{name: "absolute path outside root", requested: outside, wantErr: true},
 		{name: "parent traversal", requested: filepath.Join("..", filepath.Base(outsideRoot), "outside.txt"), wantErr: true},
 		{name: "symlink escape", requested: "outside-link", wantErr: true},
 		{name: "missing path", requested: "missing.txt", wantErr: true},
@@ -68,4 +70,26 @@ func TestResolvePath(t *testing.T) {
 			t.Fatal("resolveExistingPath() error = nil, want an error")
 		}
 	})
+}
+
+func TestResolveWritablePathAcceptsOnlyAbsolutePathsInsideRoot(t *testing.T) {
+	root := t.TempDir()
+	inside := filepath.Join(root, "new", "file.txt")
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveWritablePath(root, inside)
+	if err != nil {
+		t.Fatalf("resolveWritablePath() unexpected error: %v", err)
+	}
+	want := filepath.Join(resolvedRoot, "new", "file.txt")
+	if got != want {
+		t.Fatalf("resolveWritablePath() = %q, want %q", got, want)
+	}
+
+	outside := filepath.Join(t.TempDir(), "file.txt")
+	if _, err := resolveWritablePath(root, outside); err == nil {
+		t.Fatal("resolveWritablePath() error = nil, want an error")
+	}
 }
