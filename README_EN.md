@@ -1,6 +1,6 @@
 # Bare Agent
 
-A minimal coding agent built from scratch in Go to make the agent loop, tool calling, and context management easy to understand.
+A coding agent built from scratch in Go that can inspect code, edit files, and run commands to verify its changes.
 
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](https://go.dev/)
 [![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek-4D6BFE)](https://www.deepseek.com/)
@@ -8,19 +8,13 @@ A minimal coding agent built from scratch in Go to make the agent loop, tool cal
 
 [中文](README.md)
 
-The runtime follows a complete agent loop: the LLM requests a tool, the agent executes it and returns the result, and the LLM continues with the updated context until it produces a final answer.
+## Highlights
 
-DeepSeek is the default provider. To use another LLM, implement the project's `Model` interface; the agent loop remains unchanged.
+- **Zero third-party Go dependencies**: built with the standard library, including the agent loop, streaming model interactions, and incremental tool-call assembly—without an agent framework or model SDK.
+- **Complete coding workflow**: built-in tools for code search, file operations, and command execution, validated through an end-to-end bug-fix task.
+- **Safe file modifications**: read-before-write enforcement, hash-based conflict detection, atomic replacement, workspace boundaries, symlink escape protection, and explicit approval before file changes or command execution.
 
-## Core features
-
-- Three read-only tools for listing files, reading files, and searching code.
-- Multi-step tool calling until the LLM produces a final answer.
-- In-memory conversation history, with `/new` to start a fresh context.
-- Bounded API retries and structured error results.
-- Optional JSONL tracing for sessions, runs, model calls, and tool executions.
-
-## Usage
+## Quick start
 
 Requires Go 1.26, `rg`, and a DeepSeek API key.
 
@@ -29,10 +23,10 @@ export DEEPSEEK_API_KEY="your-api-key"
 go run ./cmd/bare-agent -root .
 ```
 
-Interactive mode:
+Submit coding tasks directly in interactive mode:
 
 ```text
-> Find GenerateResponse and explain what it does
+> Find the bug in NormalizeTag, fix it, and run the tests
 > /new
 > /exit
 ```
@@ -40,13 +34,13 @@ Interactive mode:
 You can also run a one-off task:
 
 ```bash
-go run ./cmd/bare-agent -root . "Explain the entry point of this project"
+go run ./cmd/bare-agent -root . "Explain the main entry point and call flow"
 ```
 
 To record an execution trace, provide a trace file:
 
 ```bash
-go run ./cmd/bare-agent -root . -trace trace.jsonl "Explain the entry point of this project"
+go run ./cmd/bare-agent -root . -trace /tmp/bare-agent-trace.jsonl "Explain the project entry point"
 ```
 
-This version is intentionally read-only. It does not edit files, run arbitrary commands, or persist conversations across processes.
+File changes and command execution require explicit terminal approval. Conversations are kept in memory and are not persisted across processes.
