@@ -103,6 +103,31 @@ func TestSearchTextIncludesContext(t *testing.T) {
 	}
 }
 
+func TestSearchTextLimitsOutput(t *testing.T) {
+	root := t.TempDir()
+	content := strings.Repeat("target\n", toolOutputLimit/4) + "target end\n"
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	result, err := searchText(context.Background(), root, ".", []string{"target"})
+	if err != nil {
+		t.Fatalf("searchText() error = %v", err)
+	}
+	if len(result) <= toolOutputLimit {
+		t.Fatalf("searchText() output length = %d, want more than %d including marker", len(result), toolOutputLimit)
+	}
+	if !strings.Contains(result[:100], "file.txt:1:target") {
+		t.Fatal("searchText() output does not preserve the first match")
+	}
+	if !strings.Contains(result, "[... truncated ") {
+		t.Fatal("searchText() output does not contain the truncation marker")
+	}
+	if !strings.HasSuffix(result, "target end\n") {
+		t.Fatal("searchText() output does not preserve the last match")
+	}
+}
+
 func TestExecuteSearchText(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("find target\nfind another\n"), 0o600); err != nil {

@@ -41,9 +41,11 @@ func searchText(_ context.Context, root, requested string, patterns []string) (s
 	args = append(args, "--", target)
 	command := exec.Command("rg", args...)
 	command.Dir = safeRoot
-	output, err := command.Output()
+	var output limitedOutput
+	command.Stdout = &output
+	err = command.Run()
 	if err == nil {
-		return string(output), nil
+		return output.String(), nil
 	}
 
 	var exitErr *exec.ExitError

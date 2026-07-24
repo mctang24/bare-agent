@@ -85,7 +85,7 @@ func TestRunCommandTruncatesOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Stdout) != commandOutputLimit || len(result.Stderr) != commandOutputLimit ||
+	if len(result.Stdout) <= toolOutputLimit || len(result.Stderr) <= toolOutputLimit ||
 		!strings.HasPrefix(result.Stdout, strings.Repeat("o", 100)) ||
 		!strings.HasSuffix(result.Stdout, "stdout end") ||
 		!strings.Contains(result.Stdout, "[... truncated ") ||
@@ -171,9 +171,9 @@ func TestRunCommandHelperProcess(t *testing.T) {
 		fmt.Fprint(os.Stderr, "failed")
 		os.Exit(7)
 	case "large_output":
-		fmt.Fprint(os.Stdout, strings.Repeat("o", commandOutputLimit+1))
+		fmt.Fprint(os.Stdout, strings.Repeat("o", toolOutputLimit+1))
 		fmt.Fprint(os.Stdout, "stdout end")
-		fmt.Fprint(os.Stderr, strings.Repeat("e", commandOutputLimit+1))
+		fmt.Fprint(os.Stderr, strings.Repeat("e", toolOutputLimit+1))
 		fmt.Fprint(os.Stderr, "stderr end")
 	case "sleep":
 		time.Sleep(time.Second)

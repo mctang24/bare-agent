@@ -11,7 +11,6 @@ import (
 
 const (
 	defaultCommandTimeout = 60 * time.Second
-	commandOutputLimit    = 50000
 )
 
 type runCommandInput struct {
@@ -23,55 +22,6 @@ type runCommandResult struct {
 	ExitCode int    `json:"exit_code"`
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
-}
-
-type commandOutput struct {
-	head  []byte
-	tail  []byte
-	total int
-}
-
-func (output *commandOutput) Write(data []byte) (int, error) {
-	written := len(data)
-	output.total += written
-	keepEach := commandOutputLimit / 2
-	if len(output.head) < keepEach {
-		keep := keepEach - len(output.head)
-		if keep > len(data) {
-			keep = len(data)
-		}
-		output.head = append(output.head, data[:keep]...)
-		data = data[keep:]
-	}
-	if len(data) == 0 {
-		return written, nil
-	}
-	combined := append(output.tail, data...)
-	if len(combined) > keepEach {
-		combined = combined[len(combined)-keepEach:]
-	}
-	output.tail = combined
-	return written, nil
-}
-
-func (output *commandOutput) String() string {
-	if output.total <= commandOutputLimit {
-		return string(append(output.head, output.tail...))
-	}
-	omitted := output.total - commandOutputLimit
-	var marker string
-	for {
-		marker = fmt.Sprintf("\n\n[... truncated %d bytes ...]\n\n", omitted)
-		next := output.total - (commandOutputLimit - len(marker))
-		if next == omitted {
-			break
-		}
-		omitted = next
-	}
-	kept := commandOutputLimit - len(marker)
-	headLength := (kept + 1) / 2
-	tailLength := kept - headLength
-	return string(output.head[:headLength]) + marker + string(output.tail[len(output.tail)-tailLength:])
 }
 
 func (workspaceTools *WorkspaceTools) executeRunCommand(ctx context.Context, root, arguments string) (string, error) {
@@ -100,7 +50,7 @@ func (workspaceTools *WorkspaceTools) executeRunCommand(ctx context.Context, roo
 	defer cancel()
 	command := exec.CommandContext(commandCtx, input.Command, input.Args...)
 	command.Dir = root
-	var stdout, stderr commandOutput
+	var stdout, stderr limitedOutput
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	err = command.Run()
